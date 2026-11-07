@@ -83,12 +83,8 @@ Options parse_options(int argc, char** argv) {
   Options options;
   for (int i = 1; i < argc; ++i) {
     const std::string argument = argv[i];
-    if (argument == "--rom" && i + 1 < argc) {
-      options.rom_path = argv[++i];
-    } else if (argument == "--disk" && i + 1 < argc) {
-      options.disk_path = argv[++i];
-    } else if (argument == "--read-only") {
-      options.disk_writable = false;
+    if (parse_common_option(argc, argv, i, options)) {
+      continue;
     } else if (argument == "--no-flip-y") {
       options.flip_y = false;
     } else if (argument == "--steps-per-frame" && i + 1 < argc) {
@@ -98,17 +94,16 @@ Options parse_options(int argc, char** argv) {
       if (options.scale < 0.5 || options.scale > 4.0) {
         throw std::invalid_argument("--scale must be between 0.5 and 4.0");
       }
-    } else if (argument == "--help" || argument == "-h") {
-      usage(argv[0]);
-      std::exit(0);
     } else {
       usage(argv[0]);
       throw std::invalid_argument("unknown or incomplete command-line option: " + argument);
     }
   }
-  if (!options.disk_writable && options.disk_path.empty()) {
-    throw std::invalid_argument("--read-only requires --disk FILE");
+  if (options.help_requested) {
+    usage(argv[0]);
+    std::exit(0);
   }
+  validate_common_options(options);
   return options;
 }
 

@@ -1,4 +1,5 @@
 #include "risc5.hpp"
+#include "display.hpp"
 
 #include <SDL.h>
 
@@ -9,6 +10,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -42,37 +44,18 @@ Options parse_options(int argc, char** argv) {
   return options;
 }
 
-void draw_status(SDL_Renderer* renderer, const oberon::Machine& machine, bool paused) {
-  SDL_SetRenderDrawColor(renderer, 10, 14, 20, 255);
-  SDL_RenderClear(renderer);
-
-  const SDL_Rect frame{24, 24, 752, 432};
-  SDL_SetRenderDrawColor(renderer, 74, 92, 116, 255);
-  SDL_RenderDrawRect(renderer, &frame);
-
-  const SDL_Rect cpu_panel{48, 56, 704, 120};
-  SDL_SetRenderDrawColor(renderer, 22, 30, 42, 255);
-  SDL_RenderFillRect(renderer, &cpu_panel);
-  SDL_SetRenderDrawColor(renderer, paused ? 236 : 94, paused ? 182 : 210, paused ? 74 : 126, 255);
-  SDL_RenderDrawRect(renderer, &cpu_panel);
-
-  const SDL_Rect led_panel{48, 208, 704, 176};
-  SDL_SetRenderDrawColor(renderer, 22, 30, 42, 255);
-  SDL_RenderFillRect(renderer, &led_panel);
-  SDL_SetRenderDrawColor(renderer, 74, 92, 116, 255);
-  SDL_RenderDrawRect(renderer, &led_panel);
-
-  const auto leds = machine.memory().leds();
-  for (int bit = 0; bit < 8; ++bit) {
-    const SDL_Rect led{88 + bit * 80, 264, 48, 48};
-    const bool on = (leds & (1u << bit)) != 0;
-    SDL_SetRenderDrawColor(renderer, on ? 72 : 28, on ? 220 : 36, on ? 124 : 48, 255);
-    SDL_RenderFillRect(renderer, &led);
-    SDL_SetRenderDrawColor(renderer, 130, 150, 170, 255);
-    SDL_RenderDrawRect(renderer, &led);
+void update_framebuffer(oberon::Memory& memory, std::vector<std::uint32_t>& pixels,
+                        std::uint32_t black, std::uint32_t white) {
+  for (std::uint32_t y = 0; y < oberon::display::Height; ++y) {
+    const auto row = oberon::display::Base + y * oberon::display::RowBytes;
+    for (std::uint32_t word = 0; word < oberon::display::Width / 32; ++word) {
+      const auto bits = memory.read32(row + word * sizeof(std::uint32_t));
+      for (std::uint32_t bit = 0; bit < 32; ++bit) {
+        const auto x = word * 32 + bit;
+        pixels[y * oberon::display::Width + x] = (bits & (1u << bit)) != 0 ? white : black;
+      }
+    }
   }
-
-  SDL_RenderPresent(renderer);
 }
 
 std::string window_title(const oberon::Machine& machine, bool paused, const std::string& uart_output) {
@@ -96,17 +79,28 @@ std::string window_title(const oberon::Machine& machine, bool paused, const std:
 int main(int argc, char** argv) {
   SDL_Window* window = nullptr;
   SDL_Renderer* renderer = nullptr;
+  SDL_Texture* texture = nullptr;
   try {
     const auto options = parse_options(argc, argv);
     oberon::Machine machine;
     if (!options.rom_path.empty()) machine.memory().load_rom_file(options.rom_path);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
-    window = SDL_CreateWindow("Project Oberon", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 480, 0);
+    window = SDL_CreateWindow("Project Oberon", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                              oberon::display::Width, oberon::display::Height, SDL_WINDOW_RESIZABLE);
     if (window == nullptr) throw std::runtime_error(SDL_GetError());
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer == nullptr) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     if (renderer == nullptr) throw std::runtime_error(SDL_GetError());
+    auto* pixel_format = SDL_AllocFormat(SDL_PIXELFORMAT_ARGB8888);
+    if (pixel_format == nullptr) throw std::runtime_error(SDL_GetError());
+    const auto black = SDL_MapRGB(pixel_format, 0, 0, 0);
+    const auto white = SDL_MapRGB(pixel_format, 255, 255, 255);
+    SDL_FreeFormat(pixel_format);
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                oberon::display::Width, oberon::display::Height);
+    if (texture == nullptr) throw std::runtime_error(SDL_GetError());
+    std::vector<std::uint32_t> pixels(oberon::display::Width * oberon::display::Height, black);
     SDL_StartTextInput();
 
     bool running = true;
@@ -135,17 +129,26 @@ int main(int argc, char** argv) {
       const auto frame_output = machine.memory().take_uart_output();
       if (!frame_output.empty()) uart_output += frame_output;
       SDL_SetWindowTitle(window, window_title(machine, paused, uart_output).c_str());
-      draw_status(renderer, machine, paused);
+      update_framebuffer(machine.memory(), pixels, black, white);
+      if (SDL_UpdateTexture(texture, nullptr, pixels.data(), oberon::display::Width * sizeof(std::uint32_t)) != 0) {
+        throw std::runtime_error(SDL_GetError());
+      }
+      SDL_RenderClear(renderer);
+      SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+      SDL_RenderPresent(renderer);
     }
     SDL_StopTextInput();
+    SDL_DestroyTexture(texture);
   } catch (const std::exception& error) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "oberon-ui: %s", error.what());
+    if (texture != nullptr) SDL_DestroyTexture(texture);
     if (renderer != nullptr) SDL_DestroyRenderer(renderer);
     if (window != nullptr) SDL_DestroyWindow(window);
     SDL_Quit();
     return 1;
   }
 
+  if (texture != nullptr) SDL_DestroyTexture(texture);
   if (renderer != nullptr) SDL_DestroyRenderer(renderer);
   if (window != nullptr) SDL_DestroyWindow(window);
   SDL_Quit();

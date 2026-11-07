@@ -1,5 +1,6 @@
 #include "risc5.hpp"
 #include "disk_image.hpp"
+#include "display.hpp"
 #include "risc5_constants.hpp"
 
 #include <array>
@@ -106,6 +107,13 @@ void test_mmio_devices() {
   assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x1000'0000u) != 0);
   assert(memory.read32(mmio(MmioRegister::KeyboardData)) == 0x1c);
   assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x1000'0000u) == 0);
+}
+
+void test_display_memory_layout() {
+  Memory memory;
+  memory.write32(oberon::display::Base, 0x8000'0001u);
+  assert(memory.read32(oberon::display::Base) == 0x8000'0001u);
+  assert(oberon::display::Base + oberon::display::Height * oberon::display::RowBytes < memory.ram_size());
 }
 
 void test_disk_image() {
@@ -238,11 +246,12 @@ void test_machine_advances_time_with_cpu() {
 
 int main() {
   using Test = void (*)();
-  const std::array<std::pair<const char*, Test>, 8> tests = {
+  const std::array<std::pair<const char*, Test>, 9> tests = {
       std::pair{"arithmetic and flags", &test_arithmetic_and_flags},
       std::pair{"branch and link", &test_branch_and_link},
       std::pair{"memory word and byte access", &test_memory_word_and_byte_access},
       std::pair{"MMIO devices", &test_mmio_devices},
+      std::pair{"display memory layout", &test_display_memory_layout},
       std::pair{"disk image", &test_disk_image},
       std::pair{"SPI disk read/write", &test_spi_disk_read_write},
       std::pair{"machine disk ownership", &test_machine_owns_disk_connection},

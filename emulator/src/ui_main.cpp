@@ -3,6 +3,7 @@
 
 #include <SDL.h>
 
+#include <bit>
 #include <cstdlib>
 #include <cstdint>
 #include <exception>
@@ -60,24 +61,29 @@ Options parse_options(int argc, char** argv) {
   return options;
 }
 
-void update_framebuffer(oberon::Memory& memory, std::vector<std::uint32_t>& pixels,
-                        std::uint32_t black, std::uint32_t white) {
+std::size_t update_framebuffer(oberon::Memory& memory, std::vector<std::uint32_t>& pixels,
+                               std::uint32_t black, std::uint32_t white) {
+  std::size_t lit_pixels = 0;
   for (std::uint32_t y = 0; y < oberon::display::Height; ++y) {
     const auto row = oberon::display::Base + y * oberon::display::RowBytes;
     for (std::uint32_t word = 0; word < oberon::display::Width / 32; ++word) {
       const auto bits = memory.read32(row + word * sizeof(std::uint32_t));
+      lit_pixels += std::popcount(bits);
       for (std::uint32_t bit = 0; bit < 32; ++bit) {
         const auto x = word * 32 + bit;
         pixels[y * oberon::display::Width + x] = (bits & (1u << bit)) != 0 ? white : black;
       }
     }
   }
+  return lit_pixels;
 }
 
-std::string window_title(const oberon::Machine& machine, bool paused, const std::string& uart_output) {
+std::string window_title(const oberon::Machine& machine, bool paused, const std::string& uart_output,
+                         std::size_t lit_pixels) {
   std::ostringstream title;
   title << "Project Oberon | " << (paused ? "paused" : "running") << " | pc=0x" << std::hex << std::setw(6)
-        << std::setfill('0') << machine.cpu().pc_byte() << " | steps=" << std::dec << machine.cpu().steps();
+        << std::setfill('0') << machine.cpu().pc_byte() << " | steps=" << std::dec << machine.cpu().steps()
+        << " | fb=" << lit_pixels;
   if (!uart_output.empty()) {
     const auto start = uart_output.size() > 32 ? uart_output.size() - 32 : 0;
     title << " | uart=\"";
@@ -147,8 +153,8 @@ int main(int argc, char** argv) {
       if (!paused) machine.run(options.steps_per_frame);
       const auto frame_output = machine.memory().take_uart_output();
       if (!frame_output.empty()) uart_output += frame_output;
-      SDL_SetWindowTitle(window, window_title(machine, paused, uart_output).c_str());
-      update_framebuffer(machine.memory(), pixels, black, white);
+      const auto lit_pixels = update_framebuffer(machine.memory(), pixels, black, white);
+      SDL_SetWindowTitle(window, window_title(machine, paused, uart_output, lit_pixels).c_str());
       if (SDL_UpdateTexture(texture, nullptr, pixels.data(), oberon::display::Width * sizeof(std::uint32_t)) != 0) {
         throw std::runtime_error(SDL_GetError());
       }

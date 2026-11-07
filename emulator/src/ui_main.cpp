@@ -30,7 +30,7 @@ struct Options {
 void usage(const char* name) {
   SDL_Log("usage: %s [--rom FILE] [--disk FILE] [--read-only] [--steps-per-frame N]", name);
   SDL_Log("         [--scale N] [--no-flip-y] (default scale: 1.25; framebuffer remains 1024x768)");
-  SDL_Log("controls: Ctrl+Space pause/resume, Ctrl+S single-step, Escape quit, other keys -> Oberon keyboard");
+  SDL_Log("controls: F9 pause/resume, F10 single-step, Escape quit, other keys -> Oberon keyboard");
   SDL_Log("text input is also forwarded to the emulated UART receive queue");
 }
 
@@ -300,10 +300,9 @@ int main(int argc, char** argv) {
         }
         if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
           if (event.key.repeat != 0) continue;
-          const auto control_modifier = (event.key.keysym.mod & KMOD_CTRL) != 0;
           if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) running = false;
-          else if (event.type == SDL_KEYDOWN && control_modifier && event.key.keysym.sym == SDLK_SPACE) paused = !paused;
-          else if (event.type == SDL_KEYDOWN && control_modifier && event.key.keysym.sym == SDLK_s) machine.step();
+          else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F9) paused = !paused;
+          else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F10) machine.step();
           else enqueue_keyboard_event(machine.memory(), event.key.keysym.sym, event.type == SDL_KEYDOWN);
         }
       }

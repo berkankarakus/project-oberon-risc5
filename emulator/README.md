@@ -10,7 +10,13 @@ Build and test from the repository root:
 make test
 ```
 
-This runs both the RISC5/device tests and the SDL keyboard/mouse mapping tests.
+This runs the RISC5 core, device/SPI, SDL input, and command-line option tests.
+
+To build all command-line and test binaries:
+
+```sh
+make all
+```
 
 Or, when CMake is available:
 
@@ -31,6 +37,10 @@ Run with a disk image:
 ```sh
 ./oberon-run --rom RISC5Verilog/prom.mem --disk /path/to/RISCimg.img --steps 100000
 ```
+
+The CLI also accepts `--read-only` with `--disk FILE`; `--help` prints usage.
+The UI shares the ROM, disk, and read-only option handling, and adds
+`--steps-per-frame`, `--scale`, and `--no-flip-y`.
 
 The SDL frontend can be built when SDL2 is installed:
 
@@ -54,6 +64,10 @@ forwarded through the Oberon mouse MMIO register.
 
 The framebuffer is the original 1024×768 monochrome region at `0xE7F00`.
 The window scales that framebuffer without changing the emulated address map.
+
+Generated binaries (`oberon-run`, `oberon-ui`, and the test executables) are
+local build outputs. The disk image used for boot tests is not modified by
+read-only runs.
 
 ## Linux guest bundle
 

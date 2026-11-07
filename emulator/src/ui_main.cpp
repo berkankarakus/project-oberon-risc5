@@ -258,6 +258,7 @@ int main(int argc, char** argv) {
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                 oberon::display::Width, oberon::display::Height);
     if (texture == nullptr) throw std::runtime_error(SDL_GetError());
+    if (SDL_SetTextureScaleMode(texture, SDL_ScaleModeNearest) != 0) throw std::runtime_error(SDL_GetError());
     std::vector<std::uint32_t> pixels(oberon::display::Width * oberon::display::Height, black);
     SDL_StartTextInput();
     text_input_started = true;

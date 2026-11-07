@@ -18,6 +18,18 @@ To build all command-line and test binaries:
 make all
 ```
 
+Install locally on Linux without `sudo`:
+
+```sh
+scripts/install-linux.sh ~/.local
+project-oberon-run --disk /path/to/RISCimg.img --steps 100000
+project-oberon-ui --disk /path/to/RISCimg.img
+```
+
+The installer always installs the CLI and installs the SDL UI when
+`sdl2-config` is available. Pass another prefix as the first argument, for
+example `scripts/install-linux.sh "$HOME/.local"`.
+
 Or, when CMake is available:
 
 ```sh

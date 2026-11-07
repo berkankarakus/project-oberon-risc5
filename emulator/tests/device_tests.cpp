@@ -1,129 +1,13 @@
-#include "risc5.hpp"
-#include "disk_image.hpp"
-#include "display.hpp"
-#include "risc5_constants.hpp"
+#include "test_support.hpp"
 
-#include <array>
 #include <cassert>
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <initializer_list>
 #include <iostream>
-#include <stdexcept>
 #include <utility>
 
-using oberon::Memory;
-using oberon::Risc5;
-
 namespace {
-using oberon::AluOp;
-using oberon::ConditionCode;
-using oberon::MmioRegister;
-using oberon::instruction_bits::BranchDisplacementMask;
-using oberon::instruction_bits::ImmediateMask;
-using oberon::instruction_bits::P;
-using oberon::instruction_bits::Q;
-using oberon::instruction_bits::U;
-using oberon::instruction_bits::V;
-
-constexpr std::uint32_t mmio(MmioRegister reg) {
-  return Memory::IoBase + static_cast<std::uint32_t>(reg);
-}
-
-constexpr std::uint32_t mov_imm(unsigned a, std::uint16_t value, bool negative = false) {
-  return Q | (a << 24) | (negative ? V : 0u) | value;
-}
-
-constexpr std::uint32_t alu(AluOp op, unsigned a, unsigned b, unsigned c) {
-  return (a << 24) | (b << 20) | (static_cast<unsigned>(op) << 16) | c;
-}
-
-constexpr std::uint32_t memory_op(bool store, bool byte, unsigned a, unsigned b, std::uint32_t offset) {
-  return P | (store ? U : 0u) | (byte ? V : 0u) | (a << 24) | (b << 20) | (offset & ImmediateMask);
-}
-
-constexpr std::uint32_t branch_relative(ConditionCode condition, std::int32_t displacement, bool link = false) {
-  return P | Q | U | (link ? V : 0u) |
-         (static_cast<std::uint32_t>(condition) << 24) |
-         (static_cast<std::uint32_t>(displacement) & BranchDisplacementMask);
-}
-
-using Rom = std::array<std::uint32_t, Memory::RomWords>;
-
-Rom rom_with(std::initializer_list<std::uint32_t> words) {
-  Rom rom{};
-  std::size_t index = 0;
-  for (const auto word : words) rom[index++] = word;
-  return rom;
-}
-
-void test_arithmetic_and_flags() {
-  Memory memory;
-  memory.load_rom_words(rom_with({mov_imm(1, 7), mov_imm(2, 5), alu(AluOp::Add, 3, 1, 2)}));
-  Risc5 cpu(memory);
-  cpu.step();
-  cpu.step();
-  cpu.step();
-  assert(cpu.reg(3) == 12);
-  assert(!cpu.zero());
-  assert(!cpu.negative());
-}
-
-void test_integer_signedness_and_subtract_borrow() {
-  {
-    Memory memory;
-    memory.load_rom_words(rom_with({mov_imm(1, 0xffff, true), mov_imm(2, 2), alu(AluOp::Mul, 3, 1, 2)}));
-    Risc5 cpu(memory);
-    for (int i = 0; i < 3; ++i) cpu.step();
-    assert(cpu.reg(3) == 0xffff'fffeu);
-    assert(cpu.high() == 0xffff'ffffu);
-  }
-  {
-    Memory memory;
-    memory.load_rom_words(rom_with({mov_imm(1, 0xffff, true), mov_imm(2, 2), alu(AluOp::Mul, 3, 1, 2) | U}));
-    Risc5 cpu(memory);
-    for (int i = 0; i < 3; ++i) cpu.step();
-    assert(cpu.reg(3) == 0xffff'fffeu);
-    assert(cpu.high() == 1);
-  }
-  {
-    Memory memory;
-    memory.load_rom_words(rom_with({mov_imm(1, 3), mov_imm(2, 5), alu(AluOp::Sub, 3, 1, 2)}));
-    Risc5 cpu(memory);
-    for (int i = 0; i < 3; ++i) cpu.step();
-    assert(cpu.reg(3) == 0xffff'fffeu);
-    assert(cpu.carry());
-  }
-  {
-    Memory memory;
-    memory.load_rom_words(rom_with({mov_imm(1, 0xffff, true), mov_imm(2, 2), alu(AluOp::Mul, 3, 1, 2), alu(AluOp::Mov, 4, 0, 0) | U,
-                                    alu(AluOp::Mov, 5, 0, 0) | U | V}));
-    Risc5 cpu(memory);
-    for (int i = 0; i < 5; ++i) cpu.step();
-    assert(cpu.reg(4) == 0xffff'ffffu);
-    assert((cpu.reg(5) & 0xffu) == 0x53u);
-  }
-}
-
-void test_branch_and_link() {
-  Memory memory;
-  memory.load_rom_words(rom_with({branch_relative(ConditionCode::Always, 2, true), mov_imm(1, 0xdead), mov_imm(1, 0xbeef), mov_imm(2, 42)}));
-  Risc5 cpu(memory);
-  cpu.step();
-  cpu.step();
-  assert(cpu.reg(1) == 0);
-  assert(cpu.reg(2) == 42);
-  assert(cpu.reg(15) == (Risc5::ResetPc + 1) * 4);
-}
-
-void test_memory_word_and_byte_access() {
-  Memory memory;
-  memory.load_rom_words(rom_with({mov_imm(1, 0x100), mov_imm(2, 0xaa), memory_op(true, true, 2, 1, 0x20), memory_op(false, true, 3, 1, 0x20)}));
-  Risc5 cpu(memory);
-  for (int i = 0; i < 4; ++i) cpu.step();
-  assert(cpu.reg(3) == 0xaa);
-}
+using namespace test_support;
 
 void test_mmio_devices() {
   Memory memory;
@@ -144,8 +28,7 @@ void test_mmio_devices() {
   assert(memory.read32(mmio(MmioRegister::KeyboardData)) == 0x1c);
   assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x1000'0000u) == 0);
   memory.set_mouse(123, 456, 5);
-  assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x0fff'ffffu) ==
-         ((5u << 24) | (456u << 12) | 123u));
+  assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x0fff'ffffu) == ((5u << 24) | (456u << 12) | 123u));
 }
 
 void test_display_memory_layout() {
@@ -178,8 +61,8 @@ void test_disk_image() {
   } catch (const std::runtime_error&) {
     rejected_partial_sector = true;
   }
-  assert(rejected_partial_sector);
   std::filesystem::remove(invalid_path);
+  assert(rejected_partial_sector);
 
   oberon::DiskImage image;
   image.create(path, 4);
@@ -187,23 +70,13 @@ void test_disk_image() {
   oberon::DiskImage::Sector sector{};
   for (std::size_t i = 0; i < sector.size(); ++i) sector[i] = static_cast<std::uint8_t>(i ^ 0xa5u);
   image.write(2, sector);
-  const auto loaded = image.read(2);
-  assert(loaded == sector);
+  assert(image.read(2) == sector);
 
   bool rejected_read_out_of_range = false;
-  try {
-    image.read(image.sector_count());
-  } catch (const std::out_of_range&) {
-    rejected_read_out_of_range = true;
-  }
+  try { image.read(image.sector_count()); } catch (const std::out_of_range&) { rejected_read_out_of_range = true; }
   assert(rejected_read_out_of_range);
-
   bool rejected_write_out_of_range = false;
-  try {
-    image.write(image.sector_count(), sector);
-  } catch (const std::out_of_range&) {
-    rejected_write_out_of_range = true;
-  }
+  try { image.write(image.sector_count(), sector); } catch (const std::out_of_range&) { rejected_write_out_of_range = true; }
   assert(rejected_write_out_of_range);
   image.close();
 
@@ -211,11 +84,7 @@ void test_disk_image() {
   read_only.open(path, false);
   assert(!read_only.writable());
   bool rejected_read_only_write = false;
-  try {
-    read_only.write(0, sector);
-  } catch (const std::runtime_error&) {
-    rejected_read_only_write = true;
-  }
+  try { read_only.write(0, sector); } catch (const std::runtime_error&) { rejected_read_only_write = true; }
   assert(rejected_read_only_write);
   read_only.close();
   std::filesystem::remove(path);
@@ -230,8 +99,6 @@ void test_spi_disk_read_write() {
   image.write(1, source);
   Memory memory;
   memory.attach_disk(image);
-
-  // Select card and issue CMD17 for sector 1.
   memory.write32(mmio(MmioRegister::SpiControl), 1);
   const auto spi = [&](std::uint8_t byte) {
     memory.write32(mmio(MmioRegister::SpiData), byte);
@@ -296,42 +163,20 @@ void test_machine_timer_interrupt_delivery() {
   const auto return_from_interrupt = 0xc700'0010u;
   machine.memory().load_rom_words(rom_with({enable_interrupts}));
   machine.memory().write32(4, return_from_interrupt);
-
   machine.run(oberon::Machine::TimerInterruptPeriod);
   assert(machine.memory().read32(mmio(MmioRegister::Timer)) == oberon::Machine::TimerInterruptPeriod);
   assert(machine.cpu().pc_word() != 1);
-
-  // The timer pulse is sampled on the boundary step and acknowledged on the
-  // following instruction, matching the FPGA's registered pending flag.
   machine.step();
   assert(machine.cpu().pc_word() == 1);
   machine.step();
   assert(machine.cpu().pc_word() == Risc5::ResetPc + oberon::Machine::TimerInterruptPeriod + 1);
 }
 
-void test_interrupt_vector_and_rti() {
-  Memory memory;
-  const auto enable_interrupts = 0xc700'0021u;
-  const auto return_from_interrupt = 0xc700'0010u;
-  memory.load_rom_words(rom_with({enable_interrupts, return_from_interrupt}));
-  memory.write32(4, return_from_interrupt);
-  Risc5 cpu(memory);
-  cpu.step();
-  cpu.step(true);
-  cpu.step(false);
-  assert(cpu.pc_word() == 1);
-  cpu.step(false);
-  assert(cpu.pc_word() == Risc5::ResetPc + 3);
-}
-}
+} // namespace
 
 int main() {
   using Test = void (*)();
-  const std::array<std::pair<const char*, Test>, 13> tests = {
-      std::pair{"arithmetic and flags", &test_arithmetic_and_flags},
-      std::pair{"integer signedness and subtract borrow", &test_integer_signedness_and_subtract_borrow},
-      std::pair{"branch and link", &test_branch_and_link},
-      std::pair{"memory word and byte access", &test_memory_word_and_byte_access},
+  const std::array<std::pair<const char*, Test>, 8> tests = {
       std::pair{"MMIO devices", &test_mmio_devices},
       std::pair{"display memory layout", &test_display_memory_layout},
       std::pair{"disk image", &test_disk_image},
@@ -340,11 +185,10 @@ int main() {
       std::pair{"machine disk ownership", &test_machine_owns_disk_connection},
       std::pair{"machine timing", &test_machine_advances_time_with_cpu},
       std::pair{"machine timer interrupt delivery", &test_machine_timer_interrupt_delivery},
-      std::pair{"interrupt vector and RTI", &test_interrupt_vector_and_rti},
   };
   for (const auto& [name, test] : tests) {
     test();
     std::cout << "[ok] " << name << '\n';
   }
-  std::cout << "risc5-tests: all tests passed\n";
+  std::cout << "device-tests: all tests passed\n";
 }

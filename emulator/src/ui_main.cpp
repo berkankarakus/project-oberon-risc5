@@ -22,14 +22,14 @@ struct Options {
   std::string rom_path;
   std::string disk_path;
   std::uint64_t steps_per_frame = 100'000;
-  double scale = 1.5;
+  double scale = 1.25;
   bool disk_writable = true;
   bool flip_y = true;
 };
 
 void usage(const char* name) {
   SDL_Log("usage: %s [--rom FILE] [--disk FILE] [--read-only] [--steps-per-frame N]", name);
-  SDL_Log("         [--scale N] [--no-flip-y] (default scale: 1.5; framebuffer remains 1024x768)");
+  SDL_Log("         [--scale N] [--no-flip-y] (default scale: 1.25; framebuffer remains 1024x768)");
   SDL_Log("controls: Space pause/resume, S single-step, Escape quit, other keys -> Oberon keyboard");
   SDL_Log("text input is also forwarded to the emulated UART receive queue");
 }
@@ -258,7 +258,6 @@ int main(int argc, char** argv) {
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                 oberon::display::Width, oberon::display::Height);
     if (texture == nullptr) throw std::runtime_error(SDL_GetError());
-    if (SDL_SetTextureScaleMode(texture, SDL_ScaleModeNearest) != 0) throw std::runtime_error(SDL_GetError());
     std::vector<std::uint32_t> pixels(oberon::display::Width * oberon::display::Height, black);
     SDL_StartTextInput();
     text_input_started = true;

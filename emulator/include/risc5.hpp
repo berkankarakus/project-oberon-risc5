@@ -1,11 +1,10 @@
 #pragma once
 
-#include "disk_image.hpp"
+#include "devices.hpp"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <string>
 #include <vector>
 
@@ -16,9 +15,9 @@ public:
   static constexpr std::uint32_t AddressMask = 0x00ff'ffffu;
   virtual ~MemoryBus() = default;
 
-  virtual std::uint8_t read8(std::uint32_t address) const = 0;
-  virtual std::uint32_t read32(std::uint32_t address) const = 0;
-  virtual std::uint32_t read_instruction(std::uint32_t address) const = 0;
+  virtual std::uint8_t read8(std::uint32_t address) = 0;
+  virtual std::uint32_t read32(std::uint32_t address) = 0;
+  virtual std::uint32_t read_instruction(std::uint32_t address) = 0;
   virtual void write8(std::uint32_t address, std::uint8_t value) = 0;
   virtual void write32(std::uint32_t address, std::uint32_t value) = 0;
   virtual void tick() = 0;
@@ -27,14 +26,14 @@ public:
 class Memory final : public MemoryBus {
 public:
   static constexpr std::uint32_t RomBase = 0x00ff'c000u;
-  static constexpr std::uint32_t IoBase = 0x00ff'ffc0u;
+  static constexpr std::uint32_t IoBase = DeviceBus::IoBase;
   static constexpr std::size_t RomWords = 512;
 
   explicit Memory(std::size_t ram_bytes = 1u << 20);
 
-  std::uint8_t read8(std::uint32_t address) const override;
-  std::uint32_t read32(std::uint32_t address) const override;
-  std::uint32_t read_instruction(std::uint32_t address) const override;
+  std::uint8_t read8(std::uint32_t address) override;
+  std::uint32_t read32(std::uint32_t address) override;
+  std::uint32_t read_instruction(std::uint32_t address) override;
   void write8(std::uint32_t address, std::uint8_t value) override;
   void write32(std::uint32_t address, std::uint32_t value) override;
 
@@ -49,44 +48,20 @@ public:
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
   std::string take_uart_output();
-  void attach_disk(DiskImage* disk) { disk_ = disk; }
-  bool has_disk() const { return disk_ != nullptr; }
-  std::uint32_t leds() const { return leds_; }
+  void attach_disk(DiskImage* disk) { devices_.attach_disk(disk); }
+  bool has_disk() const { return devices_.has_disk(); }
+  std::uint32_t leds() const { return devices_.leds(); }
 
   std::size_t ram_size() const { return ram_.size(); }
 
 private:
   bool is_rom(std::uint32_t address) const;
   bool is_mmio(std::uint32_t address) const;
-  std::uint32_t read_mmio(std::uint32_t address) const;
-  void write_mmio(std::uint32_t address, std::uint32_t value);
-  std::uint8_t spi_exchange_byte(std::uint8_t value);
-  std::uint32_t spi_exchange_word(std::uint32_t value);
-  void spi_command_complete();
   std::size_t ram_index(std::uint32_t address) const;
 
   std::vector<std::uint8_t> ram_;
   std::array<std::uint32_t, RomWords> rom_{};
-  std::uint32_t milliseconds_ = 0;
-  std::uint8_t leds_ = 0;
-  std::uint8_t gpio_out_ = 0;
-  std::uint8_t gpio_control_ = 0;
-  std::uint8_t spi_control_ = 0;
-  std::uint8_t uart_control_ = 0;
-  mutable std::uint32_t spi_rx_ = 0xffff'ffffu;
-  bool spi_selected_ = false;
-  bool spi_app_command_ = false;
-  bool spi_write_active_ = false;
-  std::uint32_t spi_write_sector_ = 0;
-  std::size_t spi_write_offset_ = 0;
-  DiskImage::Sector spi_write_buffer_{};
-  std::array<std::uint8_t, 6> spi_command_{};
-  std::size_t spi_command_size_ = 0;
-  mutable std::deque<std::uint8_t> spi_response_;
-  DiskImage* disk_ = nullptr;
-  mutable std::deque<std::uint8_t> uart_rx_;
-  mutable std::deque<std::uint8_t> keyboard_;
-  std::string uart_output_;
+  DeviceBus devices_;
 };
 
 class Risc5 {

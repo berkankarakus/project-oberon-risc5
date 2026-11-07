@@ -6,11 +6,11 @@ CPPFLAGS ?= -I emulator/include
 
 all: oberon-run risc5-tests
 
-oberon-run: emulator/src/risc5.cpp emulator/src/disk_image.cpp emulator/src/main.cpp emulator/include/risc5.hpp emulator/include/disk_image.hpp
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) emulator/src/risc5.cpp emulator/src/disk_image.cpp emulator/src/main.cpp -o $@
+oberon-run: emulator/src/risc5.cpp emulator/src/devices.cpp emulator/src/disk_image.cpp emulator/src/main.cpp emulator/include/risc5.hpp emulator/include/devices.hpp emulator/include/disk_image.hpp
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) emulator/src/risc5.cpp emulator/src/devices.cpp emulator/src/disk_image.cpp emulator/src/main.cpp -o $@
 
-risc5-tests: emulator/src/risc5.cpp emulator/src/disk_image.cpp emulator/tests/risc5_tests.cpp emulator/include/risc5.hpp emulator/include/disk_image.hpp
-	$(CXX) $(CXXFLAGS) $(CPPFLAGS) emulator/src/risc5.cpp emulator/src/disk_image.cpp emulator/tests/risc5_tests.cpp -o $@
+risc5-tests: emulator/src/risc5.cpp emulator/src/devices.cpp emulator/src/disk_image.cpp emulator/tests/risc5_tests.cpp emulator/include/risc5.hpp emulator/include/devices.hpp emulator/include/disk_image.hpp
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) emulator/src/risc5.cpp emulator/src/devices.cpp emulator/src/disk_image.cpp emulator/tests/risc5_tests.cpp -o $@
 
 test: risc5-tests
 	./risc5-tests

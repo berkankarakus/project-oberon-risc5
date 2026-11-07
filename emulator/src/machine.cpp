@@ -16,8 +16,13 @@ void Machine::close_disk() {
   disk_.reset();
 }
 
+void Machine::step() {
+  cpu_.step();
+  memory_.advance_time();
+}
+
 void Machine::run(std::uint64_t steps) {
-  for (std::uint64_t i = 0; i < steps; ++i) cpu_.step();
+  for (std::uint64_t i = 0; i < steps; ++i) step();
 }
 
 } // namespace oberon

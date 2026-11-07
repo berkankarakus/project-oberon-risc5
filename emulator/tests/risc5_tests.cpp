@@ -29,8 +29,8 @@ void test_memory_word_and_byte_access() {
 
 void test_mmio_devices() {
   Memory memory;
-  memory.tick();
-  memory.tick();
+  memory.advance_time();
+  memory.advance_time();
   assert(memory.read32(Memory::IoBase) == 2);
   memory.write32(Memory::IoBase + 4, 0x5a);
   assert(memory.read32(Memory::IoBase + 4) == 0x5a);
@@ -99,6 +99,16 @@ void test_machine_owns_disk_connection() {
   assert(!machine.memory().has_disk());
   std::filesystem::remove(path);
 }
+
+void test_machine_advances_time_with_cpu() {
+  oberon::Machine machine;
+  std::array<std::uint32_t, Memory::RomWords> rom{};
+  rom[0] = mov_imm(1, 7);
+  machine.memory().load_rom_words(rom);
+  machine.step();
+  assert(machine.cpu().steps() == 1);
+  assert(machine.memory().read32(Memory::IoBase) == 1);
+}
 }
 
-int main() { test_arithmetic_and_flags(); test_branch_and_link(); test_memory_word_and_byte_access(); test_mmio_devices(); test_disk_image(); test_spi_disk_read_write(); test_machine_owns_disk_connection(); std::cout << "risc5-tests: all tests passed\n"; }
+int main() { test_arithmetic_and_flags(); test_branch_and_link(); test_memory_word_and_byte_access(); test_mmio_devices(); test_disk_image(); test_spi_disk_read_write(); test_machine_owns_disk_connection(); test_machine_advances_time_with_cpu(); std::cout << "risc5-tests: all tests passed\n"; }

@@ -93,7 +93,7 @@ void Memory::load_rom_file(const std::string& path) {
   }
 }
 
-void Memory::tick() { devices_.tick(); }
+void Memory::advance_time() { devices_.advance_time(); }
 void Memory::enqueue_uart_rx(std::uint8_t value) { devices_.enqueue_uart_rx(value); }
 void Memory::enqueue_keyboard(std::uint8_t value) { devices_.enqueue_keyboard(value); }
 std::string Memory::take_uart_output() { return devices_.take_uart_output(); }
@@ -221,7 +221,6 @@ void Risc5::step() {
   if (!instruction.p) execute_register(instruction);
   else if (!instruction.q) execute_memory(instruction);
   else execute_branch(instruction, next_pc);
-  memory_.tick();
   ++steps_;
 }
 

@@ -18,10 +18,10 @@ int main(int argc, char** argv) {
     else { usage(argv[0]); return 2; }
   }
   try {
-    oberon::Memory memory;
-    if (!rom_path.empty()) memory.load_rom_file(rom_path);
-    oberon::Risc5 cpu(memory);
-    for (std::uint64_t i = 0; i < steps; ++i) cpu.step();
+    oberon::Machine machine;
+    if (!rom_path.empty()) machine.memory().load_rom_file(rom_path);
+    machine.run(steps);
+    const auto& cpu = machine.cpu();
     std::cout << "steps=" << cpu.steps() << " pc=0x" << std::hex << std::setw(6) << std::setfill('0') << cpu.pc_byte()
               << " r14=0x" << std::setw(8) << cpu.reg(14) << " r15=0x" << std::setw(8) << cpu.reg(15) << std::dec << "\n";
     return 0;

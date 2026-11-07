@@ -21,7 +21,7 @@ public:
   std::uint32_t read(std::uint32_t address);
   void write(std::uint32_t address, std::uint32_t value);
   void reset();
-  void tick();
+  void advance_time();
 
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);

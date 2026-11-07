@@ -77,7 +77,7 @@ void DeviceBus::reset() {
   uart_output_.clear();
 }
 
-void DeviceBus::tick() { ++milliseconds_; }
+void DeviceBus::advance_time() { ++milliseconds_; }
 
 void DeviceBus::enqueue_uart_rx(std::uint8_t value) { uart_rx_.push_back(value); }
 

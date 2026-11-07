@@ -22,7 +22,6 @@ public:
   virtual std::uint32_t read_instruction(std::uint32_t address) = 0;
   virtual void write8(std::uint32_t address, std::uint8_t value) = 0;
   virtual void write32(std::uint32_t address, std::uint32_t value) = 0;
-  virtual void tick() = 0;
 };
 
 class Memory final : public MemoryBus {
@@ -43,10 +42,9 @@ public:
   void load_rom_words(const std::array<std::uint32_t, RomWords>& words);
   void load_rom_file(const std::string& path);
 
-  // Functional-mode device hooks. One interpreter step advances the
-  // emulated millisecond counter by one tick; cycle-accurate timing will be
-  // added when the cycle runner is introduced.
-  void tick() override;
+  // Functional-mode device hook. Machine advances this once per instruction;
+  // direct callers may use it to drive devices without a CPU.
+  void advance_time();
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
   std::string take_uart_output();
@@ -136,7 +134,7 @@ public:
   void open_disk(const std::string& path, bool writable = true);
   void close_disk();
   bool has_disk() const { return disk_.has_value(); }
-  void step() { cpu_.step(); }
+  void step();
   void run(std::uint64_t steps);
 
 private:

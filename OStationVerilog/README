@@ -1,0 +1,47 @@
+RISC Project Oberon (2013) for OberonStation - Build Summary
+Paul Reed 27.10.2015 rev. A
+
+The following steps are a quick reference to build the RISC Project 
+Oberon (2013) system from scratch, in the form in which it was developed for
+the OberonStation board.  Since the board FPGA is supplied pre-programmed, 
+these hardware steps have already been done for you; if you do not have a
+pre-programmed microSD-Card then begin at step 1.
+
+This summary assumes familiarity with all relevant software tools and 
+hardware, and their own documentation.
+
+Pre-requisites
+ - OberonStation board http://oberonstation.x10.mx/
+ - microSD-card, PS/2 keyboard, VGA monitor (>= 1024x768)
+ - PS/2 mouse with 3 buttons (or with scrollwheel button)
+ - PC running Microsoft Windows or Linux (or MacOS if starting at step 1)
+ - Xilinx ISE (e.g. WebPack) software (for step 0)
+ - JTAG programming cable (for step 0)
+ - Internet access, in particular to:
+     http://www.inf.ethz.ch/personal/wirth/ProjectOberon
+     http://www.projectoberon.com
+     http://oberonstation.x10.mx/
+
+Step 0. (Optional) Synthesize hardware and program FPGA
+ - download OStationVerilog.zip from http://www.projectoberon.com
+ - in Xilinx ISE create new project RISC5 for xc3s700an-fgg484-4
+ - unzip OStationVerilog.zip in RISC5 folder (creates src/ subdir)
+ - back in ISE, add src/ files to project
+ - (optional) cross-compile e.g. BootLoad.Mod to update prom.mem boot code
+ - make sure RISC5Top.OStation.v is selected as top module
+ - generate programming file (bitfile) RISC5Top.bit (time-consuming)
+ - connect JTAG cable and apply USB power
+ - write bitfile to FPGA flash using Xilinx iMPACT tool
+
+Step 1. (Optional) Download and write SD-card image
+ - download RISCimg.zip raw filesystem image from http://www.projectoberon.com
+ - unzip and write raw image (do not simply copy file) to microSD-card
+   (Unix/Linux/Mac dd command or a Windows SD-card image raw-writing program)
+ - insert microSD-card in socket on OberonStation
+
+Step 2. Plug in hardware and go!
+ - ensure OberonStation board is powered-off
+ - ensure jumpers J0 and J3 are absent (open) for standard configuration
+ - connect VGA monitor, PS/2 keyboard and mouse (in that order) to board
+ - cold-start system by plugging in USB power
+

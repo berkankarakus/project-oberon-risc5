@@ -23,9 +23,9 @@ std::uint32_t DeviceBus::read(std::uint32_t address) {
     // The hardware register retains the last received word until the next
     // transfer. The boot ROM reads this value once for the response and may
     // read it again while decoding the SD-card status.
-    return spi_rx_;
+    return spi_.read_data();
   }
-  case MmioRegister::SpiControl: return 1u;
+  case MmioRegister::SpiControl: return spi_.read_status();
   case MmioRegister::KeyboardStatus:
     return (static_cast<std::uint32_t>(mouse_buttons_ & 0x07u) << 24) |
            (static_cast<std::uint32_t>(mouse_y_ & 0x03ffu) << 12) | (mouse_x_ & 0x03ffu) |
@@ -46,18 +46,8 @@ void DeviceBus::write(std::uint32_t address, std::uint32_t value) {
   case MmioRegister::Leds: leds_ = static_cast<std::uint8_t>(value); break;
   case MmioRegister::UartData: uart_output_.push_back(static_cast<char>(value & 0xffu)); break;
   case MmioRegister::UartControl: uart_control_ = static_cast<std::uint8_t>(value); break;
-  case MmioRegister::SpiData: spi_rx_ = spi_exchange_word(value); break;
-  case MmioRegister::SpiControl: {
-    const auto next = static_cast<std::uint8_t>(value);
-    spi_selected_ = (next & spi_control::Card0) != 0;
-    if (!spi_selected_) {
-      spi_command_size_ = 0;
-      spi_response_.clear();
-      spi_write_active_ = false;
-    }
-    spi_control_ = next;
-    break;
-  }
+  case MmioRegister::SpiData: spi_.write_data(value); break;
+  case MmioRegister::SpiControl: spi_.write_control(value); break;
   case MmioRegister::GpioData: gpio_out_ = static_cast<std::uint8_t>(value); break;
   case MmioRegister::GpioControl: gpio_control_ = static_cast<std::uint8_t>(value); break;
   default: break;
@@ -66,16 +56,8 @@ void DeviceBus::write(std::uint32_t address, std::uint32_t value) {
 
 void DeviceBus::reset() {
   milliseconds_ = 0;
-  leds_ = gpio_out_ = gpio_control_ = spi_control_ = uart_control_ = 0;
-  spi_rx_ = 0xffff'ffffu;
-  spi_selected_ = false;
-  spi_app_command_ = false;
-  spi_write_active_ = false;
-  spi_write_sector_ = 0;
-  spi_write_offset_ = 0;
-  spi_command_.fill(0);
-  spi_command_size_ = 0;
-  spi_response_.clear();
+  leds_ = gpio_out_ = gpio_control_ = uart_control_ = 0;
+  spi_.reset();
   uart_rx_.clear();
   keyboard_.clear();
   mouse_x_ = mouse_y_ = 0;
@@ -99,81 +81,6 @@ std::string DeviceBus::take_uart_output() {
   auto output = uart_output_;
   uart_output_.clear();
   return output;
-}
-
-std::uint8_t DeviceBus::spi_exchange_byte(std::uint8_t value) {
-  if (!spi_selected_ || !disk_.has_value()) return 0xff;
-  if (!spi_response_.empty()) {
-    const auto response = spi_response_.front();
-    spi_response_.pop_front();
-    return response;
-  }
-  if (spi_write_active_) {
-    if (spi_write_offset_ == 0) {
-      if (value == 0xfe) spi_write_offset_ = 1;
-      return 0xff;
-    }
-    if (spi_write_offset_ <= DiskImage::SectorSize) {
-      spi_write_buffer_[spi_write_offset_ - 1] = value;
-      ++spi_write_offset_;
-      return 0xff;
-    }
-    if (spi_write_offset_ == DiskImage::SectorSize + 1) {
-      ++spi_write_offset_;
-      return 0xff;
-    }
-    disk_->get().write(spi_write_sector_, spi_write_buffer_);
-    spi_write_active_ = false;
-    spi_write_offset_ = 0;
-    return 0x05;
-  }
-  if (spi_command_size_ == 0 && value == 0xff) return 0xff;
-  spi_command_[spi_command_size_++] = value;
-  if (spi_command_size_ == spi_command_.size()) spi_command_complete();
-  return 0xff;
-}
-
-std::uint32_t DeviceBus::spi_exchange_word(std::uint32_t value) {
-  if ((spi_control_ & spi_control::Fast) == 0) return spi_exchange_byte(static_cast<std::uint8_t>(value));
-  std::uint32_t result = 0;
-  for (unsigned i = 0; i < 4; ++i) {
-    result |= static_cast<std::uint32_t>(spi_exchange_byte(static_cast<std::uint8_t>(value >> (i * 8)))) << (i * 8);
-  }
-  return result;
-}
-
-void DeviceBus::spi_command_complete() {
-  const auto command = spi_command_[0] & 0x3f;
-  const auto argument = (static_cast<std::uint32_t>(spi_command_[1]) << 24) |
-                        (static_cast<std::uint32_t>(spi_command_[2]) << 16) |
-                        (static_cast<std::uint32_t>(spi_command_[3]) << 8) |
-                        spi_command_[4];
-  spi_command_size_ = 0;
-  switch (command) {
-  case 0: spi_response_.push_back(0x01); break;
-  case 8: spi_response_ = {0x01, 0, 0, 1, 0xaa}; break;
-  case 55: spi_app_command_ = true; spi_response_.push_back(0x01); break;
-  case 41: spi_response_.push_back(spi_app_command_ ? 0x00 : 0x05); spi_app_command_ = false; break;
-  case 58: spi_response_ = {0x00, 0x40, 0xff, 0x80, 0x00}; break;
-  case 17: {
-    spi_response_.push_back(0x00);
-    const auto sector = argument < disk_->get().sector_count() ? argument : 0;
-    const auto data = disk_->get().read(sector);
-    spi_response_.push_back(0xfe);
-    spi_response_.insert(spi_response_.end(), data.begin(), data.end());
-    spi_response_.push_back(0xff);
-    spi_response_.push_back(0xff);
-    break;
-  }
-  case 24:
-    spi_response_.push_back(0x00);
-    spi_write_active_ = true;
-    spi_write_sector_ = argument < disk_->get().sector_count() ? argument : 0;
-    spi_write_offset_ = 0;
-    spi_write_buffer_.fill(0);
-    break;
-  default: spi_response_.push_back(0x04); break;
-  }
 }
 
 } // namespace oberon

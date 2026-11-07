@@ -14,6 +14,15 @@ target_compile_options(risc5 PRIVATE
 add_executable(oberon-run emulator/src/main.cpp)
 target_link_libraries(oberon-run PRIVATE risc5)
 
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(SDL2 QUIET IMPORTED_TARGET sdl2)
+endif()
+if(TARGET PkgConfig::SDL2)
+  add_executable(oberon-ui emulator/src/ui_main.cpp)
+  target_link_libraries(oberon-ui PRIVATE risc5 PkgConfig::SDL2)
+endif()
+
 enable_testing()
 add_executable(risc5-tests emulator/tests/risc5_tests.cpp)
 target_link_libraries(risc5-tests PRIVATE risc5)

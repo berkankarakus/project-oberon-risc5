@@ -18,7 +18,7 @@ namespace {
 struct Options {
   std::string rom_path;
   std::string disk_path;
-  std::uint64_t steps_per_frame = 5'000;
+  std::uint64_t steps_per_frame = 100'000;
   double scale = 1.25;
   bool disk_writable = true;
 };

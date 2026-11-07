@@ -19,7 +19,8 @@ struct Options {
 
 void usage(const char* name) {
   SDL_Log("usage: %s [--rom FILE] [--steps-per-frame N]", name);
-  SDL_Log("controls: Space pause/resume, S single-step, Escape quit");
+  SDL_Log("controls: Space pause/resume, S single-step, Escape quit, other keys -> Oberon keyboard");
+  SDL_Log("text input is also forwarded to the emulated UART receive queue");
 }
 
 Options parse_options(int argc, char** argv) {
@@ -74,10 +75,19 @@ void draw_status(SDL_Renderer* renderer, const oberon::Machine& machine, bool pa
   SDL_RenderPresent(renderer);
 }
 
-std::string window_title(const oberon::Machine& machine, bool paused) {
+std::string window_title(const oberon::Machine& machine, bool paused, const std::string& uart_output) {
   std::ostringstream title;
   title << "Project Oberon | " << (paused ? "paused" : "running") << " | pc=0x" << std::hex << std::setw(6)
         << std::setfill('0') << machine.cpu().pc_byte() << " | steps=" << std::dec << machine.cpu().steps();
+  if (!uart_output.empty()) {
+    const auto start = uart_output.size() > 32 ? uart_output.size() - 32 : 0;
+    title << " | uart=\"";
+    for (std::size_t i = start; i < uart_output.size(); ++i) {
+      const auto character = uart_output[i];
+      title << ((character == '\n' || character == '\r') ? ' ' : character);
+    }
+    title << '"';
+  }
   return title.str();
 }
 
@@ -95,24 +105,39 @@ int main(int argc, char** argv) {
     window = SDL_CreateWindow("Project Oberon", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 480, 0);
     if (window == nullptr) throw std::runtime_error(SDL_GetError());
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (renderer == nullptr) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     if (renderer == nullptr) throw std::runtime_error(SDL_GetError());
+    SDL_StartTextInput();
 
     bool running = true;
     bool paused = false;
+    std::string uart_output;
     while (running) {
       SDL_Event event;
       while (SDL_PollEvent(&event) != 0) {
         if (event.type == SDL_QUIT) running = false;
+        if (event.type == SDL_TEXTINPUT) {
+          for (const auto* character = event.text.text; *character != '\0'; ++character) {
+            machine.memory().enqueue_uart_rx(static_cast<std::uint8_t>(*character));
+          }
+          continue;
+        }
         if (event.type != SDL_KEYDOWN || event.key.repeat != 0) continue;
         if (event.key.keysym.sym == SDLK_ESCAPE) running = false;
-        if (event.key.keysym.sym == SDLK_SPACE) paused = !paused;
-        if (event.key.keysym.sym == SDLK_s) machine.step();
+        else if (event.key.keysym.sym == SDLK_SPACE) paused = !paused;
+        else if (event.key.keysym.sym == SDLK_s) machine.step();
+        else if (event.key.keysym.scancode <= SDL_SCANCODE_UNKNOWN + 255) {
+          machine.memory().enqueue_keyboard(static_cast<std::uint8_t>(event.key.keysym.scancode));
+        }
       }
 
       if (!paused) machine.run(options.steps_per_frame);
-      SDL_SetWindowTitle(window, window_title(machine, paused).c_str());
+      const auto frame_output = machine.memory().take_uart_output();
+      if (!frame_output.empty()) uart_output += frame_output;
+      SDL_SetWindowTitle(window, window_title(machine, paused, uart_output).c_str());
       draw_status(renderer, machine, paused);
     }
+    SDL_StopTextInput();
   } catch (const std::exception& error) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "oberon-ui: %s", error.what());
     if (renderer != nullptr) SDL_DestroyRenderer(renderer);

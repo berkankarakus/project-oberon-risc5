@@ -16,12 +16,14 @@ namespace {
 
 struct Options {
   std::string rom_path;
+  std::string disk_path;
   std::uint64_t steps_per_frame = 5'000;
   double scale = 1.25;
+  bool disk_writable = true;
 };
 
 void usage(const char* name) {
-  SDL_Log("usage: %s [--rom FILE] [--steps-per-frame N]", name);
+  SDL_Log("usage: %s [--rom FILE] [--disk FILE] [--read-only] [--steps-per-frame N]", name);
   SDL_Log("         [--scale N] (default: 1.25; framebuffer remains 1024x768)");
   SDL_Log("controls: Space pause/resume, S single-step, Escape quit, other keys -> Oberon keyboard");
   SDL_Log("text input is also forwarded to the emulated UART receive queue");
@@ -33,6 +35,10 @@ Options parse_options(int argc, char** argv) {
     const std::string argument = argv[i];
     if (argument == "--rom" && i + 1 < argc) {
       options.rom_path = argv[++i];
+    } else if (argument == "--disk" && i + 1 < argc) {
+      options.disk_path = argv[++i];
+    } else if (argument == "--read-only") {
+      options.disk_writable = false;
     } else if (argument == "--steps-per-frame" && i + 1 < argc) {
       options.steps_per_frame = std::stoull(argv[++i]);
     } else if (argument == "--scale" && i + 1 < argc) {
@@ -47,6 +53,9 @@ Options parse_options(int argc, char** argv) {
       usage(argv[0]);
       throw std::invalid_argument("unknown or incomplete command-line option: " + argument);
     }
+  }
+  if (!options.disk_writable && options.disk_path.empty()) {
+    throw std::invalid_argument("--read-only requires --disk FILE");
   }
   return options;
 }
@@ -91,6 +100,7 @@ int main(int argc, char** argv) {
     const auto options = parse_options(argc, argv);
     oberon::Machine machine;
     if (!options.rom_path.empty()) machine.memory().load_rom_file(options.rom_path);
+    if (!options.disk_path.empty()) machine.open_disk(options.disk_path, options.disk_writable);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
     const auto window_width = static_cast<int>(oberon::display::Width * options.scale);

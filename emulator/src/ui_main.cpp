@@ -17,10 +17,12 @@ namespace {
 struct Options {
   std::string rom_path;
   std::uint64_t steps_per_frame = 5'000;
+  double scale = 1.25;
 };
 
 void usage(const char* name) {
   SDL_Log("usage: %s [--rom FILE] [--steps-per-frame N]", name);
+  SDL_Log("         [--scale N] (default: 1.25; framebuffer remains 1024x768)");
   SDL_Log("controls: Space pause/resume, S single-step, Escape quit, other keys -> Oberon keyboard");
   SDL_Log("text input is also forwarded to the emulated UART receive queue");
 }
@@ -33,6 +35,11 @@ Options parse_options(int argc, char** argv) {
       options.rom_path = argv[++i];
     } else if (argument == "--steps-per-frame" && i + 1 < argc) {
       options.steps_per_frame = std::stoull(argv[++i]);
+    } else if (argument == "--scale" && i + 1 < argc) {
+      options.scale = std::stod(argv[++i]);
+      if (options.scale < 0.5 || options.scale > 4.0) {
+        throw std::invalid_argument("--scale must be between 0.5 and 4.0");
+      }
     } else if (argument == "--help" || argument == "-h") {
       usage(argv[0]);
       std::exit(0);
@@ -86,8 +93,10 @@ int main(int argc, char** argv) {
     if (!options.rom_path.empty()) machine.memory().load_rom_file(options.rom_path);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) throw std::runtime_error(SDL_GetError());
+    const auto window_width = static_cast<int>(oberon::display::Width * options.scale);
+    const auto window_height = static_cast<int>(oberon::display::Height * options.scale);
     window = SDL_CreateWindow("Project Oberon", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              oberon::display::Width, oberon::display::Height, SDL_WINDOW_RESIZABLE);
+                              window_width, window_height, SDL_WINDOW_RESIZABLE);
     if (window == nullptr) throw std::runtime_error(SDL_GetError());
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer == nullptr) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);

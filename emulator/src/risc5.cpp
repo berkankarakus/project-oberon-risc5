@@ -36,7 +36,11 @@ std::uint32_t Memory::read_mmio(std::uint32_t address) const {
   }
   case 0x0c:
     return (uart_rx_.empty() ? 0u : 1u) | (1u << 1); // RX ready, TX ready
-  case 0x10: return 0; // SPI data; no card backend yet
+  case 0x10: {
+    const auto value = spi_rx_;
+    spi_rx_ = 0xffff'ffffu;
+    return value;
+  }
   case 0x14: return 1u; // SPI ready
   case 0x18:
     return (keyboard_.empty() ? 0u : 1u) << 28; // keyboard ready in bit 28
@@ -56,8 +60,20 @@ void Memory::write_mmio(std::uint32_t address, std::uint32_t value) {
   case 0x04: leds_ = static_cast<std::uint8_t>(value); break;
   case 0x08: uart_output_.push_back(static_cast<char>(value & 0xffu)); break;
   case 0x0c: uart_control_ = static_cast<std::uint8_t>(value); break;
-  case 0x10: break; // SPI data is a no-op until the disk backend is connected
-  case 0x14: spi_control_ = static_cast<std::uint8_t>(value); break;
+  case 0x10:
+    spi_rx_ = spi_exchange_word(value);
+    break;
+  case 0x14: {
+    const auto next = static_cast<std::uint8_t>(value);
+    spi_selected_ = (next & 1u) != 0;
+    if (!spi_selected_) {
+      spi_command_size_ = 0;
+      spi_response_.clear();
+      spi_write_active_ = false;
+    }
+    spi_control_ = next;
+    break;
+  }
   case 0x20: gpio_out_ = static_cast<std::uint8_t>(value); break;
   case 0x24: gpio_control_ = static_cast<std::uint8_t>(value); break;
   default: break;
@@ -126,6 +142,15 @@ void Memory::clear() {
   uart_rx_.clear();
   keyboard_.clear();
   uart_output_.clear();
+  spi_rx_ = 0xff;
+  spi_selected_ = false;
+  spi_app_command_ = false;
+  spi_write_active_ = false;
+  spi_write_sector_ = 0;
+  spi_write_offset_ = 0;
+  spi_command_.fill(0);
+  spi_command_size_ = 0;
+  spi_response_.clear();
 }
 
 void Memory::load_rom_words(const std::array<std::uint32_t, RomWords>& words) {
@@ -159,6 +184,86 @@ std::string Memory::take_uart_output() {
   auto output = uart_output_;
   uart_output_.clear();
   return output;
+}
+
+std::uint8_t Memory::spi_exchange_byte(std::uint8_t value) {
+  if (!spi_selected_ || disk_ == nullptr) return 0xff;
+  if (!spi_response_.empty()) {
+    const auto response = spi_response_.front();
+    spi_response_.pop_front();
+    return response;
+  }
+
+  if (spi_write_active_) {
+    if (spi_write_offset_ == 0) {
+      if (value == 0xfe) spi_write_offset_ = 1;
+      return 0xff;
+    }
+    if (spi_write_offset_ <= DiskImage::SectorSize) {
+      spi_write_buffer_[spi_write_offset_ - 1] = value;
+      ++spi_write_offset_;
+      return 0xff;
+    }
+    if (spi_write_offset_ == DiskImage::SectorSize + 1) {
+      ++spi_write_offset_; // first CRC byte
+      return 0xff;
+    }
+    disk_->write(spi_write_sector_, spi_write_buffer_);
+    spi_write_active_ = false;
+    spi_write_offset_ = 0;
+    return 0x05; // data accepted
+  }
+
+  if (spi_command_size_ == 0 && value == 0xff) return 0xff;
+  spi_command_[spi_command_size_++] = value;
+  if (spi_command_size_ == spi_command_.size()) spi_command_complete();
+  return 0xff;
+}
+
+std::uint32_t Memory::spi_exchange_word(std::uint32_t value) {
+  if ((spi_control_ & 4u) == 0) return spi_exchange_byte(static_cast<std::uint8_t>(value));
+  std::uint32_t result = 0;
+  for (unsigned i = 0; i < 4; ++i) {
+    result |= static_cast<std::uint32_t>(spi_exchange_byte(static_cast<std::uint8_t>(value >> (i * 8)))) << (i * 8);
+  }
+  return result;
+}
+
+void Memory::spi_command_complete() {
+  const auto command = spi_command_[0] & 0x3f;
+  const auto argument = (static_cast<std::uint32_t>(spi_command_[1]) << 24) |
+                        (static_cast<std::uint32_t>(spi_command_[2]) << 16) |
+                        (static_cast<std::uint32_t>(spi_command_[3]) << 8) |
+                        spi_command_[4];
+  spi_command_size_ = 0;
+  switch (command) {
+  case 0: spi_response_.push_back(0x01); break; // CMD0: idle
+  case 8: spi_response_ = {0x01, 0, 0, 1, 0xaa}; break; // CMD8
+  case 55: spi_app_command_ = true; spi_response_.push_back(0x01); break;
+  case 41:
+    spi_response_.push_back(spi_app_command_ ? 0x00 : 0x05);
+    spi_app_command_ = false;
+    break;
+  case 58: spi_response_ = {0x00, 0x40, 0xff, 0x80, 0x00}; break; // SDHC OCR
+  case 17: {
+    spi_response_.push_back(0x00);
+    const auto sector = argument;
+    const auto data = disk_->read(sector < disk_->sector_count() ? sector : 0);
+    spi_response_.push_back(0xfe);
+    spi_response_.insert(spi_response_.end(), data.begin(), data.end());
+    spi_response_.push_back(0xff);
+    spi_response_.push_back(0xff);
+    break;
+  }
+  case 24:
+    spi_response_.push_back(0x00);
+    spi_write_active_ = true;
+    spi_write_sector_ = argument < disk_->sector_count() ? argument : 0;
+    spi_write_offset_ = 0;
+    spi_write_buffer_.fill(0);
+    break;
+  default: spi_response_.push_back(0x04); break;
+  }
 }
 
 Risc5::Risc5(Memory& memory) : memory_(memory) { reset(); }

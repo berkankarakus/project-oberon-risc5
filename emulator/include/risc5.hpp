@@ -1,5 +1,7 @@
 #pragma once
 
+#include "disk_image.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +37,8 @@ public:
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
   std::string take_uart_output();
+  void attach_disk(DiskImage* disk) { disk_ = disk; }
+  bool has_disk() const { return disk_ != nullptr; }
   std::uint32_t leds() const { return leds_; }
 
   std::size_t ram_size() const { return ram_.size(); }
@@ -44,6 +48,9 @@ private:
   bool is_mmio(std::uint32_t address) const;
   std::uint32_t read_mmio(std::uint32_t address) const;
   void write_mmio(std::uint32_t address, std::uint32_t value);
+  std::uint8_t spi_exchange_byte(std::uint8_t value);
+  std::uint32_t spi_exchange_word(std::uint32_t value);
+  void spi_command_complete();
   std::size_t ram_index(std::uint32_t address) const;
 
   std::vector<std::uint8_t> ram_;
@@ -54,6 +61,17 @@ private:
   std::uint8_t gpio_control_ = 0;
   std::uint8_t spi_control_ = 0;
   std::uint8_t uart_control_ = 0;
+  mutable std::uint32_t spi_rx_ = 0xffff'ffffu;
+  bool spi_selected_ = false;
+  bool spi_app_command_ = false;
+  bool spi_write_active_ = false;
+  std::uint32_t spi_write_sector_ = 0;
+  std::size_t spi_write_offset_ = 0;
+  DiskImage::Sector spi_write_buffer_{};
+  std::array<std::uint8_t, 6> spi_command_{};
+  std::size_t spi_command_size_ = 0;
+  mutable std::deque<std::uint8_t> spi_response_;
+  DiskImage* disk_ = nullptr;
   mutable std::deque<std::uint8_t> uart_rx_;
   mutable std::deque<std::uint8_t> keyboard_;
   std::string uart_output_;

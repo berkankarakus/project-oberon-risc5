@@ -10,6 +10,8 @@ Build and test from the repository root:
 make test
 ```
 
+This runs both the RISC5/device tests and the SDL keyboard/mouse mapping tests.
+
 Or, when CMake is available:
 
 ```sh
@@ -34,14 +36,21 @@ The SDL frontend can be built when SDL2 is installed:
 
 ```sh
 make ui
-./oberon-ui --rom RISC5Verilog/prom.mem --disk /path/to/RISCimg.img --scale 1.5
+./oberon-ui --rom RISC5Verilog/prom.mem --disk /path/to/RISCimg.img
 ```
 
 The UI advances 100,000 emulated instructions per frame by default so the
 disk boot reaches the first framebuffer output quickly. Use
 `--steps-per-frame N` to trade boot speed for lower host CPU usage.
+The default window scale is 1.25; `--scale N` changes the window size without
+changing the emulated 1024×768 framebuffer.
 The default framebuffer presentation flips the vertical axis to match the
 FPGA video controller; use `--no-flip-y` for the raw memory orientation.
+
+UI controls are `F9` for pause/resume, `F10` for single-step, and `Escape` to
+quit. Other key presses, including Space, are forwarded to Oberon using PS/2
+Set 2 scan codes. Mouse motion and the left, middle, and right buttons are
+forwarded through the Oberon mouse MMIO register.
 
 The framebuffer is the original 1024×768 monochrome region at `0xE7F00`.
 The window scales that framebuffer without changing the emulated address map.

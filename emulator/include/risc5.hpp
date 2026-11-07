@@ -103,6 +103,8 @@ private:
   static Instruction decode(std::uint32_t raw);
   static std::int32_t sign_extend(std::uint32_t value, unsigned bits);
   bool condition(std::uint32_t instruction) const;
+  std::uint32_t execute_alu_operation(const Instruction& instruction, std::uint32_t left,
+                                      std::uint32_t operand, bool& writes);
   void execute_register(const Instruction& instruction);
   void execute_memory(const Instruction& instruction);
   void execute_branch(const Instruction& instruction, std::uint32_t next_pc);

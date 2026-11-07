@@ -177,11 +177,9 @@ void Risc5::restore_interrupt_state() {
   interrupt_mode_ = false;
 }
 
-void Risc5::execute_register(const Instruction& instruction) {
-  const auto left = regs_[instruction.b];
-  const auto operand = instruction.q ? (instruction.v ? static_cast<std::uint32_t>(sign_extend(instruction.imm, 16)) : instruction.imm) : regs_[instruction.c];
+std::uint32_t Risc5::execute_alu_operation(const Instruction& instruction, std::uint32_t left,
+                                           std::uint32_t operand, bool& writes) {
   std::uint32_t result = 0;
-  bool writes = true;
   switch (static_cast<AluOp>(instruction.op)) {
   case AluOp::Mov:
     if (instruction.q) result = instruction.u ? (instruction.imm << 16) : (instruction.v ? static_cast<std::uint32_t>(sign_extend(instruction.imm, 16)) : instruction.imm);
@@ -222,6 +220,14 @@ void Risc5::execute_register(const Instruction& instruction) {
   case AluOp::Fdv: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) / std::bit_cast<float>(operand)); break;
   default: writes = false; break;
   }
+  return result;
+}
+
+void Risc5::execute_register(const Instruction& instruction) {
+  const auto left = regs_[instruction.b];
+  const auto operand = instruction.q ? (instruction.v ? static_cast<std::uint32_t>(sign_extend(instruction.imm, 16)) : instruction.imm) : regs_[instruction.c];
+  bool writes = true;
+  const auto result = execute_alu_operation(instruction, left, operand, writes);
   if (writes) { write_reg(instruction.a, result); update_nz(result); }
 }
 

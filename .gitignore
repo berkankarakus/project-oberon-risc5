@@ -1,5 +1,6 @@
 .codegraph/
 build/
+dist/
 oberon-run
 risc5-tests
 *.o

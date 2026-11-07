@@ -287,6 +287,25 @@ void test_machine_advances_time_with_cpu() {
   assert(machine.memory().read32(mmio(MmioRegister::Timer)) == 1);
 }
 
+void test_machine_timer_interrupt_delivery() {
+  oberon::Machine machine;
+  const auto enable_interrupts = 0xc700'0021u;
+  const auto return_from_interrupt = 0xc700'0010u;
+  machine.memory().load_rom_words(rom_with({enable_interrupts}));
+  machine.memory().write32(4, return_from_interrupt);
+
+  machine.run(oberon::Machine::TimerInterruptPeriod);
+  assert(machine.memory().read32(mmio(MmioRegister::Timer)) == oberon::Machine::TimerInterruptPeriod);
+  assert(machine.cpu().pc_word() != 1);
+
+  // The timer pulse is sampled on the boundary step and acknowledged on the
+  // following instruction, matching the FPGA's registered pending flag.
+  machine.step();
+  assert(machine.cpu().pc_word() == 1);
+  machine.step();
+  assert(machine.cpu().pc_word() == Risc5::ResetPc + oberon::Machine::TimerInterruptPeriod + 1);
+}
+
 void test_interrupt_vector_and_rti() {
   Memory memory;
   const auto enable_interrupts = 0xc700'0021u;
@@ -305,7 +324,7 @@ void test_interrupt_vector_and_rti() {
 
 int main() {
   using Test = void (*)();
-  const std::array<std::pair<const char*, Test>, 12> tests = {
+  const std::array<std::pair<const char*, Test>, 13> tests = {
       std::pair{"arithmetic and flags", &test_arithmetic_and_flags},
       std::pair{"integer signedness and subtract borrow", &test_integer_signedness_and_subtract_borrow},
       std::pair{"branch and link", &test_branch_and_link},
@@ -317,6 +336,7 @@ int main() {
       std::pair{"SPI data read semantics", &test_spi_data_read_is_non_destructive},
       std::pair{"machine disk ownership", &test_machine_owns_disk_connection},
       std::pair{"machine timing", &test_machine_advances_time_with_cpu},
+      std::pair{"machine timer interrupt delivery", &test_machine_timer_interrupt_delivery},
       std::pair{"interrupt vector and RTI", &test_interrupt_vector_and_rti},
   };
   for (const auto& [name, test] : tests) {

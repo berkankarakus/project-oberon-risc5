@@ -266,7 +266,7 @@ void Memory::spi_command_complete() {
   }
 }
 
-Risc5::Risc5(Memory& memory) : memory_(memory) { reset(); }
+Risc5::Risc5(MemoryBus& memory) : memory_(memory) { reset(); }
 
 void Risc5::reset() {
   regs_.fill(0);
@@ -378,7 +378,7 @@ void Risc5::step() {
   }
 
   if (!q) {
-    const auto address = (regs_[b] + static_cast<std::uint32_t>(sign_extend(instruction & 0x000f'ffffu, 20))) & Memory::AddressMask;
+    const auto address = (regs_[b] + static_cast<std::uint32_t>(sign_extend(instruction & 0x000f'ffffu, 20))) & MemoryBus::AddressMask;
     if (u) {
       if (v) { const auto shift = (address & 3u) * 8u; const auto mask = 0xffu << shift; const auto old = memory_.read32(address & ~3u); memory_.write32(address & ~3u, (old & ~mask) | ((regs_[a] & 0xffu) << shift)); }
       else memory_.write32(address, regs_[a]);

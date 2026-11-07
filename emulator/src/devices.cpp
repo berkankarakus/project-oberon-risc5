@@ -10,42 +10,42 @@ bool DeviceBus::handles(std::uint32_t address) const {
 }
 
 std::uint32_t DeviceBus::read(std::uint32_t address) {
-  switch ((address - IoBase) & 0x3fu) {
-  case 0x00: return milliseconds_;
-  case 0x04: return leds_;
-  case 0x08: {
+  switch (static_cast<MmioRegister>((address - IoBase) & 0x3fu)) {
+  case MmioRegister::Timer: return milliseconds_;
+  case MmioRegister::Leds: return leds_;
+  case MmioRegister::UartData: {
     const auto value = uart_rx_.empty() ? 0u : uart_rx_.front();
     if (!uart_rx_.empty()) uart_rx_.pop_front();
     return value;
   }
-  case 0x0c: return (uart_rx_.empty() ? 0u : 1u) | (1u << 1);
-  case 0x10: {
+  case MmioRegister::UartControl: return (uart_rx_.empty() ? 0u : 1u) | (1u << 1);
+  case MmioRegister::SpiData: {
     const auto value = spi_rx_;
     spi_rx_ = 0xffff'ffffu;
     return value;
   }
-  case 0x14: return 1u;
-  case 0x18: return (keyboard_.empty() ? 0u : 1u) << 28;
-  case 0x1c: {
+  case MmioRegister::SpiControl: return 1u;
+  case MmioRegister::KeyboardStatus: return (keyboard_.empty() ? 0u : 1u) << 28;
+  case MmioRegister::KeyboardData: {
     const auto value = keyboard_.empty() ? 0u : keyboard_.front();
     if (!keyboard_.empty()) keyboard_.pop_front();
     return value;
   }
-  case 0x20: return gpio_out_;
-  case 0x24: return gpio_control_;
+  case MmioRegister::GpioData: return gpio_out_;
+  case MmioRegister::GpioControl: return gpio_control_;
   default: return 0;
   }
 }
 
 void DeviceBus::write(std::uint32_t address, std::uint32_t value) {
-  switch ((address - IoBase) & 0x3fu) {
-  case 0x04: leds_ = static_cast<std::uint8_t>(value); break;
-  case 0x08: uart_output_.push_back(static_cast<char>(value & 0xffu)); break;
-  case 0x0c: uart_control_ = static_cast<std::uint8_t>(value); break;
-  case 0x10: spi_rx_ = spi_exchange_word(value); break;
-  case 0x14: {
+  switch (static_cast<MmioRegister>((address - IoBase) & 0x3fu)) {
+  case MmioRegister::Leds: leds_ = static_cast<std::uint8_t>(value); break;
+  case MmioRegister::UartData: uart_output_.push_back(static_cast<char>(value & 0xffu)); break;
+  case MmioRegister::UartControl: uart_control_ = static_cast<std::uint8_t>(value); break;
+  case MmioRegister::SpiData: spi_rx_ = spi_exchange_word(value); break;
+  case MmioRegister::SpiControl: {
     const auto next = static_cast<std::uint8_t>(value);
-    spi_selected_ = (next & 1u) != 0;
+    spi_selected_ = (next & spi_control::Card0) != 0;
     if (!spi_selected_) {
       spi_command_size_ = 0;
       spi_response_.clear();
@@ -54,8 +54,8 @@ void DeviceBus::write(std::uint32_t address, std::uint32_t value) {
     spi_control_ = next;
     break;
   }
-  case 0x20: gpio_out_ = static_cast<std::uint8_t>(value); break;
-  case 0x24: gpio_control_ = static_cast<std::uint8_t>(value); break;
+  case MmioRegister::GpioData: gpio_out_ = static_cast<std::uint8_t>(value); break;
+  case MmioRegister::GpioControl: gpio_control_ = static_cast<std::uint8_t>(value); break;
   default: break;
   }
 }
@@ -122,7 +122,7 @@ std::uint8_t DeviceBus::spi_exchange_byte(std::uint8_t value) {
 }
 
 std::uint32_t DeviceBus::spi_exchange_word(std::uint32_t value) {
-  if ((spi_control_ & 4u) == 0) return spi_exchange_byte(static_cast<std::uint8_t>(value));
+  if ((spi_control_ & spi_control::Fast) == 0) return spi_exchange_byte(static_cast<std::uint8_t>(value));
   std::uint32_t result = 0;
   for (unsigned i = 0; i < 4; ++i) {
     result |= static_cast<std::uint32_t>(spi_exchange_byte(static_cast<std::uint8_t>(value >> (i * 8)))) << (i * 8);

@@ -109,10 +109,12 @@ void Risc5::reset() {
 }
 
 Risc5::Instruction Risc5::decode(std::uint32_t raw) {
-  return Instruction{raw, (raw & 0x8000'0000u) != 0, (raw & 0x4000'0000u) != 0,
-                     (raw & 0x2000'0000u) != 0, (raw & 0x1000'0000u) != 0,
-                     (raw >> 24) & 0x0fu, (raw >> 20) & 0x0fu, (raw >> 16) & 0x0fu,
-                     raw & 0x0fu, raw & 0xffffu};
+  return Instruction{raw, (raw & instruction_bits::P) != 0, (raw & instruction_bits::Q) != 0,
+                     (raw & instruction_bits::U) != 0, (raw & instruction_bits::V) != 0,
+                     (raw >> 24) & instruction_bits::RegisterMask,
+                     (raw >> 20) & instruction_bits::RegisterMask,
+                     (raw >> 16) & instruction_bits::RegisterMask,
+                     raw & instruction_bits::RegisterMask, raw & instruction_bits::ImmediateMask};
 }
 
 std::int32_t Risc5::sign_extend(std::uint32_t value, unsigned bits) {
@@ -121,25 +123,25 @@ std::int32_t Risc5::sign_extend(std::uint32_t value, unsigned bits) {
 }
 
 bool Risc5::condition(std::uint32_t instruction) const {
-  const auto cc = (instruction >> 24) & 7u;
-  const bool invert = ((instruction >> 27) & 1u) != 0;
+  const auto cc = static_cast<ConditionCode>((instruction >> 24) & instruction_bits::ConditionMask);
+  const bool invert = (instruction & instruction_bits::Invert) != 0;
   const bool s = n_ ^ ov_;
   bool result = false;
   switch (cc) {
-  case 0: result = n_; break;
-  case 1: result = z_; break;
-  case 2: result = c_; break;
-  case 3: result = ov_; break;
-  case 4: result = c_ || z_; break;
-  case 5: result = s; break;
-  case 6: result = s || z_; break;
-  case 7: result = true; break;
+  case ConditionCode::Mi: result = n_; break;
+  case ConditionCode::Eq: result = z_; break;
+  case ConditionCode::Cs: result = c_; break;
+  case ConditionCode::Vs: result = ov_; break;
+  case ConditionCode::Ls: result = c_ || z_; break;
+  case ConditionCode::Lt: result = s; break;
+  case ConditionCode::Le: result = s || z_; break;
+  case ConditionCode::Always: result = true; break;
   }
   return invert ^ result;
 }
 
 void Risc5::update_nz(std::uint32_t value) {
-  n_ = (value & 0x8000'0000u) != 0;
+  n_ = (value & instruction_bits::SignBit) != 0;
   z_ = value == 0;
 }
 
@@ -147,14 +149,14 @@ void Risc5::update_add_flags(std::uint32_t left, std::uint32_t right,
                              std::uint32_t result, bool carry_in) {
   const auto wide = static_cast<std::uint64_t>(left) + right + (carry_in ? 1u : 0u);
   c_ = (wide >> 32) != 0;
-  ov_ = ((~(left ^ right) & (left ^ result)) & 0x8000'0000u) != 0;
+  ov_ = ((~(left ^ right) & (left ^ result)) & instruction_bits::SignBit) != 0;
 }
 
 void Risc5::update_sub_flags(std::uint32_t left, std::uint32_t right,
                              std::uint32_t result, bool borrow_in) {
   const auto subtrahend = static_cast<std::uint64_t>(right) + (borrow_in ? 1u : 0u);
   c_ = static_cast<std::uint64_t>(left) >= subtrahend;
-  ov_ = (((left ^ right) & (left ^ result)) & 0x8000'0000u) != 0;
+  ov_ = (((left ^ right) & (left ^ result)) & instruction_bits::SignBit) != 0;
 }
 
 void Risc5::write_reg(unsigned index, std::uint32_t value) { regs_[index & 15u] = value; }
@@ -164,37 +166,37 @@ void Risc5::execute_register(const Instruction& instruction) {
   const auto operand = instruction.q ? (instruction.v ? static_cast<std::uint32_t>(sign_extend(instruction.imm, 16)) : instruction.imm) : regs_[instruction.c];
   std::uint32_t result = 0;
   bool writes = true;
-  switch (instruction.op) {
-  case 0: result = instruction.q ? (instruction.u ? (instruction.imm << 16) : static_cast<std::uint32_t>(sign_extend(instruction.imm, 16))) : regs_[instruction.c]; break;
-  case 1: result = left << (operand & 31u); break;
-  case 2: result = static_cast<std::uint32_t>(static_cast<std::int32_t>(left) >> (operand & 31u)); break;
-  case 3: { const auto shift = operand & 31u; result = shift == 0 ? left : (left >> shift) | (left << (32u - shift)); break; }
-  case 4: result = left & operand; break;
-  case 5: result = left & ~operand; break;
-  case 6: result = left | operand; break;
-  case 7: result = left ^ operand; break;
-  case 8: result = left + operand + (instruction.u && c_ ? 1u : 0u); update_add_flags(left, operand, result, instruction.u && c_); break;
-  case 9: result = left - operand - (instruction.u && c_ ? 1u : 0u); update_sub_flags(left, operand, result, instruction.u && c_); break;
-  case 10:
+  switch (static_cast<AluOp>(instruction.op)) {
+  case AluOp::Mov: result = instruction.q ? (instruction.u ? (instruction.imm << 16) : static_cast<std::uint32_t>(sign_extend(instruction.imm, 16))) : regs_[instruction.c]; break;
+  case AluOp::Lsl: result = left << (operand & 31u); break;
+  case AluOp::Asr: result = static_cast<std::uint32_t>(static_cast<std::int32_t>(left) >> (operand & 31u)); break;
+  case AluOp::Ror: { const auto shift = operand & 31u; result = shift == 0 ? left : (left >> shift) | (left << (32u - shift)); break; }
+  case AluOp::And: result = left & operand; break;
+  case AluOp::Ann: result = left & ~operand; break;
+  case AluOp::Ior: result = left | operand; break;
+  case AluOp::Xor: result = left ^ operand; break;
+  case AluOp::Add: result = left + operand + (instruction.u && c_ ? 1u : 0u); update_add_flags(left, operand, result, instruction.u && c_); break;
+  case AluOp::Sub: result = left - operand - (instruction.u && c_ ? 1u : 0u); update_sub_flags(left, operand, result, instruction.u && c_); break;
+  case AluOp::Mul:
     if (instruction.u) { const auto product = static_cast<std::int64_t>(static_cast<std::int32_t>(left)) * static_cast<std::int64_t>(static_cast<std::int32_t>(operand)); const auto bits = static_cast<std::uint64_t>(product); result = static_cast<std::uint32_t>(bits); high_ = static_cast<std::uint32_t>(bits >> 32); }
     else { const auto product = static_cast<std::uint64_t>(left) * operand; result = static_cast<std::uint32_t>(product); high_ = static_cast<std::uint32_t>(product >> 32); }
     break;
-  case 11:
+  case AluOp::Div:
     if (operand == 0) { result = std::numeric_limits<std::uint32_t>::max(); high_ = left; }
     else if (instruction.u) { const auto quotient = static_cast<std::int32_t>(left) / static_cast<std::int32_t>(operand); const auto remainder = static_cast<std::int32_t>(left) % static_cast<std::int32_t>(operand); result = static_cast<std::uint32_t>(quotient); high_ = static_cast<std::uint32_t>(remainder); }
     else { result = left / operand; high_ = left % operand; }
     break;
-  case 12: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) + std::bit_cast<float>(operand)); break;
-  case 13: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) - std::bit_cast<float>(operand)); break;
-  case 14: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) * std::bit_cast<float>(operand)); break;
-  case 15: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) / std::bit_cast<float>(operand)); break;
+  case AluOp::Fad: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) + std::bit_cast<float>(operand)); break;
+  case AluOp::Fsb: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) - std::bit_cast<float>(operand)); break;
+  case AluOp::Fml: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) * std::bit_cast<float>(operand)); break;
+  case AluOp::Fdv: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) / std::bit_cast<float>(operand)); break;
   default: writes = false; break;
   }
   if (writes) { write_reg(instruction.a, result); update_nz(result); }
 }
 
 void Risc5::execute_memory(const Instruction& instruction) {
-  const auto address = (regs_[instruction.b] + static_cast<std::uint32_t>(sign_extend(instruction.raw & 0x000f'ffffu, 20))) & MemoryBus::AddressMask;
+  const auto address = (regs_[instruction.b] + static_cast<std::uint32_t>(sign_extend(instruction.raw & instruction_bits::MemoryOffsetMask, 20))) & MemoryBus::AddressMask;
   if (instruction.u) {
     if (instruction.v) { const auto shift = (address & 3u) * 8u; const auto mask = 0xffu << shift; const auto old = memory_.read32(address & ~3u); memory_.write32(address & ~3u, (old & ~mask) | ((regs_[instruction.a] & 0xffu) << shift)); }
     else memory_.write32(address, regs_[instruction.a]);
@@ -207,14 +209,14 @@ void Risc5::execute_memory(const Instruction& instruction) {
 
 void Risc5::execute_branch(const Instruction& instruction, std::uint32_t next_pc) {
   if (!condition(instruction.raw)) return;
-  const auto displacement = sign_extend(instruction.raw & 0x003f'ffffu, 22);
-  pc_ = instruction.u ? static_cast<std::uint32_t>(next_pc + displacement) & 0x003f'ffffu : (regs_[instruction.c] >> 2) & 0x003f'ffffu;
+  const auto displacement = sign_extend(instruction.raw & instruction_bits::BranchDisplacementMask, 22);
+  pc_ = instruction.u ? static_cast<std::uint32_t>(next_pc + displacement) & instruction_bits::BranchDisplacementMask : (regs_[instruction.c] >> 2) & instruction_bits::BranchDisplacementMask;
   if (instruction.v) { const auto link = next_pc << 2; write_reg(15, link); update_nz(link); }
 }
 
 void Risc5::step() {
   const auto instruction = decode(memory_.read_instruction(pc_byte()));
-  const auto next_pc = (pc_ + 1u) & 0x003f'ffffu;
+  const auto next_pc = (pc_ + 1u) & instruction_bits::BranchDisplacementMask;
   pc_ = next_pc;
   if (!instruction.p) execute_register(instruction);
   else if (!instruction.q) execute_memory(instruction);

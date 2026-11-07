@@ -1,6 +1,7 @@
 #pragma once
 
 #include "devices.hpp"
+#include "risc5_constants.hpp"
 
 #include <array>
 #include <cstddef>

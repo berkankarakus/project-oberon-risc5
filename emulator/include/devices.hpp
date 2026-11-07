@@ -1,6 +1,7 @@
 #pragma once
 
 #include "disk_image.hpp"
+#include "risc5_constants.hpp"
 
 #include <array>
 #include <cstddef>

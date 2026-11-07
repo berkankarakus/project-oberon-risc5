@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <iostream>
 #include <filesystem>
+#include <fstream>
+#include <stdexcept>
 
 using oberon::Memory;
 using oberon::Risc5;
@@ -49,16 +51,67 @@ void test_mmio_devices() {
 
 void test_disk_image() {
   const auto path = (std::filesystem::temp_directory_path() / "project-oberon-test.img").string();
+  bool rejected_zero_sectors = false;
+  try {
+    oberon::DiskImage invalid;
+    invalid.create(path, 0);
+  } catch (const std::invalid_argument&) {
+    rejected_zero_sectors = true;
+  }
+  assert(rejected_zero_sectors);
+
+  const auto invalid_path = path + ".invalid";
+  {
+    std::ofstream malformed(invalid_path, std::ios::binary | std::ios::trunc);
+    malformed.put('\0');
+  }
+  bool rejected_partial_sector = false;
+  try {
+    oberon::DiskImage invalid;
+    invalid.open(invalid_path, false);
+  } catch (const std::runtime_error&) {
+    rejected_partial_sector = true;
+  }
+  assert(rejected_partial_sector);
+  std::filesystem::remove(invalid_path);
+
   oberon::DiskImage image;
   image.create(path, 4);
   assert(image.sector_count() == 4);
   oberon::DiskImage::Sector sector{};
-  sector[0] = 0x4f;
-  sector[1] = 0x42;
+  for (std::size_t i = 0; i < sector.size(); ++i) sector[i] = static_cast<std::uint8_t>(i ^ 0xa5u);
   image.write(2, sector);
   const auto loaded = image.read(2);
-  assert(loaded[0] == 0x4f && loaded[1] == 0x42);
+  assert(loaded == sector);
+
+  bool rejected_read_out_of_range = false;
+  try {
+    image.read(image.sector_count());
+  } catch (const std::out_of_range&) {
+    rejected_read_out_of_range = true;
+  }
+  assert(rejected_read_out_of_range);
+
+  bool rejected_write_out_of_range = false;
+  try {
+    image.write(image.sector_count(), sector);
+  } catch (const std::out_of_range&) {
+    rejected_write_out_of_range = true;
+  }
+  assert(rejected_write_out_of_range);
   image.close();
+
+  oberon::DiskImage read_only;
+  read_only.open(path, false);
+  assert(!read_only.writable());
+  bool rejected_read_only_write = false;
+  try {
+    read_only.write(0, sector);
+  } catch (const std::runtime_error&) {
+    rejected_read_only_write = true;
+  }
+  assert(rejected_read_only_write);
+  read_only.close();
   std::filesystem::remove(path);
 }
 
@@ -67,7 +120,7 @@ void test_spi_disk_read_write() {
   oberon::DiskImage image;
   image.create(path, 2);
   oberon::DiskImage::Sector source{};
-  source[0] = 0x42;
+  for (std::size_t i = 0; i < source.size(); ++i) source[i] = static_cast<std::uint8_t>((i * 3u) ^ 0x42u);
   image.write(1, source);
   Memory memory;
   memory.attach_disk(image);
@@ -81,7 +134,22 @@ void test_spi_disk_read_write() {
   for (const auto byte : {std::uint8_t(0x51), std::uint8_t(0), std::uint8_t(0), std::uint8_t(0), std::uint8_t(1), std::uint8_t(0xff)}) spi(byte);
   assert(spi(0xff) == 0x00);
   assert(spi(0xff) == 0xfe);
-  assert(spi(0xff) == 0x42);
+  for (const auto expected : source) assert(spi(0xff) == expected);
+  assert(spi(0xff) == 0xff);
+  assert(spi(0xff) == 0xff);
+
+  memory.write32(Memory::IoBase + 20, 1);
+  for (const auto byte : {std::uint8_t(0x58), std::uint8_t(0), std::uint8_t(0), std::uint8_t(0), std::uint8_t(1), std::uint8_t(0xff)}) spi(byte);
+  assert(spi(0xff) == 0x00);
+  spi(0xfe);
+  oberon::DiskImage::Sector replacement{};
+  for (std::size_t i = 0; i < replacement.size(); ++i) {
+    replacement[i] = static_cast<std::uint8_t>(0xffu - (i & 0xffu));
+    spi(replacement[i]);
+  }
+  spi(0xff);
+  assert(spi(0xff) == 0x05);
+  assert(image.read(1) == replacement);
   std::filesystem::remove(path);
 }
 

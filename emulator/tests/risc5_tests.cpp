@@ -220,6 +220,14 @@ void test_spi_disk_read_write() {
   std::filesystem::remove(path);
 }
 
+void test_spi_data_read_is_non_destructive() {
+  Memory memory;
+  memory.write32(mmio(MmioRegister::SpiControl), 1);
+  memory.write32(mmio(MmioRegister::SpiData), 0xff);
+  const auto first = memory.read32(mmio(MmioRegister::SpiData));
+  assert(memory.read32(mmio(MmioRegister::SpiData)) == first);
+}
+
 void test_machine_owns_disk_connection() {
   const auto path = (std::filesystem::temp_directory_path() / "project-oberon-machine.img").string();
   oberon::DiskImage image;
@@ -246,7 +254,7 @@ void test_machine_advances_time_with_cpu() {
 
 int main() {
   using Test = void (*)();
-  const std::array<std::pair<const char*, Test>, 9> tests = {
+  const std::array<std::pair<const char*, Test>, 10> tests = {
       std::pair{"arithmetic and flags", &test_arithmetic_and_flags},
       std::pair{"branch and link", &test_branch_and_link},
       std::pair{"memory word and byte access", &test_memory_word_and_byte_access},
@@ -254,6 +262,7 @@ int main() {
       std::pair{"display memory layout", &test_display_memory_layout},
       std::pair{"disk image", &test_disk_image},
       std::pair{"SPI disk read/write", &test_spi_disk_read_write},
+      std::pair{"SPI data read semantics", &test_spi_data_read_is_non_destructive},
       std::pair{"machine disk ownership", &test_machine_owns_disk_connection},
       std::pair{"machine timing", &test_machine_advances_time_with_cpu},
   };

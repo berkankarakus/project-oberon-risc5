@@ -20,9 +20,10 @@ std::uint32_t DeviceBus::read(std::uint32_t address) {
   }
   case MmioRegister::UartControl: return (uart_rx_.empty() ? 0u : 1u) | (1u << 1);
   case MmioRegister::SpiData: {
-    const auto value = spi_rx_;
-    spi_rx_ = 0xffff'ffffu;
-    return value;
+    // The hardware register retains the last received word until the next
+    // transfer. The boot ROM reads this value once for the response and may
+    // read it again while decoding the SD-card status.
+    return spi_rx_;
   }
   case MmioRegister::SpiControl: return 1u;
   case MmioRegister::KeyboardStatus: return (keyboard_.empty() ? 0u : 1u) << 28;

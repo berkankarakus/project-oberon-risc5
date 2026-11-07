@@ -86,8 +86,25 @@ public:
   std::uint64_t steps() const { return steps_; }
 
 private:
+  struct Instruction {
+    std::uint32_t raw;
+    bool p;
+    bool q;
+    bool u;
+    bool v;
+    unsigned a;
+    unsigned b;
+    unsigned op;
+    unsigned c;
+    std::uint32_t imm;
+  };
+
+  static Instruction decode(std::uint32_t raw);
   static std::int32_t sign_extend(std::uint32_t value, unsigned bits);
   bool condition(std::uint32_t instruction) const;
+  void execute_register(const Instruction& instruction);
+  void execute_memory(const Instruction& instruction);
+  void execute_branch(const Instruction& instruction, std::uint32_t next_pc);
   void update_nz(std::uint32_t value);
   void update_add_flags(std::uint32_t left, std::uint32_t right,
                         std::uint32_t result, bool carry_in);

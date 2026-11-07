@@ -143,6 +143,9 @@ void test_mmio_devices() {
   assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x1000'0000u) != 0);
   assert(memory.read32(mmio(MmioRegister::KeyboardData)) == 0x1c);
   assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x1000'0000u) == 0);
+  memory.set_mouse(123, 456, 5);
+  assert((memory.read32(mmio(MmioRegister::KeyboardStatus)) & 0x0fff'ffffu) ==
+         ((5u << 24) | (456u << 12) | 123u));
 }
 
 void test_display_memory_layout() {

@@ -96,6 +96,7 @@ void Memory::load_rom_file(const std::string& path) {
 void Memory::advance_time() { devices_.advance_time(); }
 void Memory::enqueue_uart_rx(std::uint8_t value) { devices_.enqueue_uart_rx(value); }
 void Memory::enqueue_keyboard(std::uint8_t value) { devices_.enqueue_keyboard(value); }
+void Memory::set_mouse(std::uint16_t x, std::uint16_t y, std::uint8_t buttons) { devices_.set_mouse(x, y, buttons); }
 std::string Memory::take_uart_output() { return devices_.take_uart_output(); }
 
 Risc5::Risc5(MemoryBus& memory) : memory_(memory) { reset(); }

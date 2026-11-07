@@ -26,7 +26,10 @@ std::uint32_t DeviceBus::read(std::uint32_t address) {
     return spi_rx_;
   }
   case MmioRegister::SpiControl: return 1u;
-  case MmioRegister::KeyboardStatus: return (keyboard_.empty() ? 0u : 1u) << 28;
+  case MmioRegister::KeyboardStatus:
+    return (static_cast<std::uint32_t>(mouse_buttons_ & 0x07u) << 24) |
+           (static_cast<std::uint32_t>(mouse_y_ & 0x03ffu) << 12) | (mouse_x_ & 0x03ffu) |
+           (keyboard_.empty() ? 0u : 1u) << 28;
   case MmioRegister::KeyboardData: {
     const auto value = keyboard_.empty() ? 0u : keyboard_.front();
     if (!keyboard_.empty()) keyboard_.pop_front();
@@ -75,6 +78,8 @@ void DeviceBus::reset() {
   spi_response_.clear();
   uart_rx_.clear();
   keyboard_.clear();
+  mouse_x_ = mouse_y_ = 0;
+  mouse_buttons_ = 0;
   uart_output_.clear();
 }
 
@@ -83,6 +88,12 @@ void DeviceBus::advance_time() { ++milliseconds_; }
 void DeviceBus::enqueue_uart_rx(std::uint8_t value) { uart_rx_.push_back(value); }
 
 void DeviceBus::enqueue_keyboard(std::uint8_t value) { keyboard_.push_back(value); }
+
+void DeviceBus::set_mouse(std::uint16_t x, std::uint16_t y, std::uint8_t buttons) {
+  mouse_x_ = x & 0x03ffu;
+  mouse_y_ = y & 0x03ffu;
+  mouse_buttons_ = buttons & 0x07u;
+}
 
 std::string DeviceBus::take_uart_output() {
   auto output = uart_output_;

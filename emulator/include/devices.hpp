@@ -25,6 +25,7 @@ public:
 
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
+  void set_mouse(std::uint16_t x, std::uint16_t y, std::uint8_t buttons);
   std::string take_uart_output();
   void attach_disk(DiskImage& disk) { disk_ = disk; }
   void detach_disk() { disk_.reset(); }
@@ -55,6 +56,9 @@ private:
   std::optional<std::reference_wrapper<DiskImage>> disk_;
   std::deque<std::uint8_t> uart_rx_;
   std::deque<std::uint8_t> keyboard_;
+  std::uint16_t mouse_x_ = 0;
+  std::uint16_t mouse_y_ = 0;
+  std::uint8_t mouse_buttons_ = 0;
   std::string uart_output_;
 };
 

@@ -47,6 +47,7 @@ public:
   void advance_time();
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
+  void set_mouse(std::uint16_t x, std::uint16_t y, std::uint8_t buttons);
   std::string take_uart_output();
   void attach_disk(DiskImage& disk) { devices_.attach_disk(disk); }
   void detach_disk() { devices_.detach_disk(); }

@@ -106,6 +106,26 @@ int main(int argc, char** argv) {
   SDL_Window* window = nullptr;
   SDL_Renderer* renderer = nullptr;
   SDL_Texture* texture = nullptr;
+  bool text_input_started = false;
+  const auto cleanup_sdl = [&] {
+    if (text_input_started) {
+      SDL_StopTextInput();
+      text_input_started = false;
+    }
+    if (texture != nullptr) {
+      SDL_DestroyTexture(texture);
+      texture = nullptr;
+    }
+    if (renderer != nullptr) {
+      SDL_DestroyRenderer(renderer);
+      renderer = nullptr;
+    }
+    if (window != nullptr) {
+      SDL_DestroyWindow(window);
+      window = nullptr;
+    }
+    SDL_Quit();
+  };
   try {
     const auto options = parse_options(argc, argv);
     oberon::Machine machine;
@@ -131,6 +151,7 @@ int main(int argc, char** argv) {
     if (texture == nullptr) throw std::runtime_error(SDL_GetError());
     std::vector<std::uint32_t> pixels(oberon::display::Width * oberon::display::Height, black);
     SDL_StartTextInput();
+    text_input_started = true;
 
     bool running = true;
     bool paused = false;
@@ -166,20 +187,11 @@ int main(int argc, char** argv) {
       SDL_RenderCopy(renderer, texture, nullptr, nullptr);
       SDL_RenderPresent(renderer);
     }
-    SDL_StopTextInput();
-    SDL_DestroyTexture(texture);
+    cleanup_sdl();
   } catch (const std::exception& error) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "oberon-ui: %s", error.what());
-    if (texture != nullptr) SDL_DestroyTexture(texture);
-    if (renderer != nullptr) SDL_DestroyRenderer(renderer);
-    if (window != nullptr) SDL_DestroyWindow(window);
-    SDL_Quit();
+    cleanup_sdl();
     return 1;
   }
-
-  if (texture != nullptr) SDL_DestroyTexture(texture);
-  if (renderer != nullptr) SDL_DestroyRenderer(renderer);
-  if (window != nullptr) SDL_DestroyWindow(window);
-  SDL_Quit();
   return 0;
 }

@@ -40,6 +40,8 @@ make ui
 The UI advances 100,000 emulated instructions per frame by default so the
 disk boot reaches the first framebuffer output quickly. Use
 `--steps-per-frame N` to trade boot speed for lower host CPU usage.
+The default framebuffer presentation flips the vertical axis to match the
+FPGA video controller; use `--no-flip-y` for the raw memory orientation.
 
 The framebuffer is the original 1024×768 monochrome region at `0xE7F00`.
 The window scales that framebuffer without changing the emulated address map.

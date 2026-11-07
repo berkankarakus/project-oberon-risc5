@@ -21,11 +21,12 @@ struct Options {
   std::uint64_t steps_per_frame = 100'000;
   double scale = 1.25;
   bool disk_writable = true;
+  bool flip_y = true;
 };
 
 void usage(const char* name) {
   SDL_Log("usage: %s [--rom FILE] [--disk FILE] [--read-only] [--steps-per-frame N]", name);
-  SDL_Log("         [--scale N] (default: 1.25; framebuffer remains 1024x768)");
+  SDL_Log("         [--scale N] [--no-flip-y] (default scale: 1.25; framebuffer remains 1024x768)");
   SDL_Log("controls: Space pause/resume, S single-step, Escape quit, other keys -> Oberon keyboard");
   SDL_Log("text input is also forwarded to the emulated UART receive queue");
 }
@@ -40,6 +41,8 @@ Options parse_options(int argc, char** argv) {
       options.disk_path = argv[++i];
     } else if (argument == "--read-only") {
       options.disk_writable = false;
+    } else if (argument == "--no-flip-y") {
+      options.flip_y = false;
     } else if (argument == "--steps-per-frame" && i + 1 < argc) {
       options.steps_per_frame = std::stoull(argv[++i]);
     } else if (argument == "--scale" && i + 1 < argc) {
@@ -62,16 +65,17 @@ Options parse_options(int argc, char** argv) {
 }
 
 std::size_t update_framebuffer(oberon::Memory& memory, std::vector<std::uint32_t>& pixels,
-                               std::uint32_t black, std::uint32_t white) {
+                               std::uint32_t black, std::uint32_t white, bool flip_y) {
   std::size_t lit_pixels = 0;
   for (std::uint32_t y = 0; y < oberon::display::Height; ++y) {
     const auto row = oberon::display::Base + y * oberon::display::RowBytes;
     for (std::uint32_t word = 0; word < oberon::display::Width / 32; ++word) {
       const auto bits = memory.read32(row + word * sizeof(std::uint32_t));
       lit_pixels += std::popcount(bits);
+      const auto screen_y = flip_y ? oberon::display::Height - 1 - y : y;
       for (std::uint32_t bit = 0; bit < 32; ++bit) {
         const auto x = word * 32 + bit;
-        pixels[y * oberon::display::Width + x] = (bits & (1u << bit)) != 0 ? white : black;
+        pixels[screen_y * oberon::display::Width + x] = (bits & (1u << bit)) != 0 ? white : black;
       }
     }
   }
@@ -153,7 +157,7 @@ int main(int argc, char** argv) {
       if (!paused) machine.run(options.steps_per_frame);
       const auto frame_output = machine.memory().take_uart_output();
       if (!frame_output.empty()) uart_output += frame_output;
-      const auto lit_pixels = update_framebuffer(machine.memory(), pixels, black, white);
+      const auto lit_pixels = update_framebuffer(machine.memory(), pixels, black, white, options.flip_y);
       SDL_SetWindowTitle(window, window_title(machine, paused, uart_output, lit_pixels).c_str());
       if (SDL_UpdateTexture(texture, nullptr, pixels.data(), oberon::display::Width * sizeof(std::uint32_t)) != 0) {
         throw std::runtime_error(SDL_GetError());

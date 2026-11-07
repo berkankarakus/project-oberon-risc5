@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,7 +49,8 @@ public:
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
   std::string take_uart_output();
-  void attach_disk(DiskImage* disk) { devices_.attach_disk(disk); }
+  void attach_disk(DiskImage& disk) { devices_.attach_disk(disk); }
+  void detach_disk() { devices_.detach_disk(); }
   bool has_disk() const { return devices_.has_disk(); }
   std::uint32_t leds() const { return devices_.leds(); }
 
@@ -102,6 +104,27 @@ private:
   bool c_ = false;
   bool ov_ = false;
   std::uint64_t steps_ = 0;
+};
+
+class Machine {
+public:
+  explicit Machine(std::size_t ram_bytes = 1u << 20);
+
+  Memory& memory() { return memory_; }
+  const Memory& memory() const { return memory_; }
+  Risc5& cpu() { return cpu_; }
+  const Risc5& cpu() const { return cpu_; }
+
+  void open_disk(const std::string& path, bool writable = true);
+  void close_disk();
+  bool has_disk() const { return disk_.has_value(); }
+  void step() { cpu_.step(); }
+  void run(std::uint64_t steps);
+
+private:
+  Memory memory_;
+  Risc5 cpu_;
+  std::optional<DiskImage> disk_;
 };
 
 } // namespace oberon

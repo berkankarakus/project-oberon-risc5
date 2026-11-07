@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <string>
 
 namespace oberon {
@@ -23,8 +25,9 @@ public:
   void enqueue_uart_rx(std::uint8_t value);
   void enqueue_keyboard(std::uint8_t value);
   std::string take_uart_output();
-  void attach_disk(DiskImage* disk) { disk_ = disk; }
-  bool has_disk() const { return disk_ != nullptr; }
+  void attach_disk(DiskImage& disk) { disk_ = disk; }
+  void detach_disk() { disk_.reset(); }
+  bool has_disk() const { return disk_.has_value(); }
   std::uint32_t leds() const { return leds_; }
 
 private:
@@ -48,7 +51,7 @@ private:
   std::array<std::uint8_t, 6> spi_command_{};
   std::size_t spi_command_size_ = 0;
   std::deque<std::uint8_t> spi_response_;
-  DiskImage* disk_ = nullptr;
+  std::optional<std::reference_wrapper<DiskImage>> disk_;
   std::deque<std::uint8_t> uart_rx_;
   std::deque<std::uint8_t> keyboard_;
   std::string uart_output_;

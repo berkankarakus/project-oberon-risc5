@@ -90,7 +90,7 @@ std::string DeviceBus::take_uart_output() {
 }
 
 std::uint8_t DeviceBus::spi_exchange_byte(std::uint8_t value) {
-  if (!spi_selected_ || disk_ == nullptr) return 0xff;
+  if (!spi_selected_ || !disk_.has_value()) return 0xff;
   if (!spi_response_.empty()) {
     const auto response = spi_response_.front();
     spi_response_.pop_front();
@@ -110,7 +110,7 @@ std::uint8_t DeviceBus::spi_exchange_byte(std::uint8_t value) {
       ++spi_write_offset_;
       return 0xff;
     }
-    disk_->write(spi_write_sector_, spi_write_buffer_);
+    disk_->get().write(spi_write_sector_, spi_write_buffer_);
     spi_write_active_ = false;
     spi_write_offset_ = 0;
     return 0x05;
@@ -145,8 +145,8 @@ void DeviceBus::spi_command_complete() {
   case 58: spi_response_ = {0x00, 0x40, 0xff, 0x80, 0x00}; break;
   case 17: {
     spi_response_.push_back(0x00);
-    const auto sector = argument < disk_->sector_count() ? argument : 0;
-    const auto data = disk_->read(sector);
+    const auto sector = argument < disk_->get().sector_count() ? argument : 0;
+    const auto data = disk_->get().read(sector);
     spi_response_.push_back(0xfe);
     spi_response_.insert(spi_response_.end(), data.begin(), data.end());
     spi_response_.push_back(0xff);
@@ -156,7 +156,7 @@ void DeviceBus::spi_command_complete() {
   case 24:
     spi_response_.push_back(0x00);
     spi_write_active_ = true;
-    spi_write_sector_ = argument < disk_->sector_count() ? argument : 0;
+    spi_write_sector_ = argument < disk_->get().sector_count() ? argument : 0;
     spi_write_offset_ = 0;
     spi_write_buffer_.fill(0);
     break;

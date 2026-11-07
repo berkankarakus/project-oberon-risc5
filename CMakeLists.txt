@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(risc5 emulator/src/risc5.cpp emulator/src/devices.cpp emulator/src/disk_image.cpp)
+add_library(risc5 emulator/src/risc5.cpp emulator/src/devices.cpp emulator/src/disk_image.cpp emulator/src/machine.cpp)
 target_include_directories(risc5 PUBLIC emulator/include)
 target_compile_options(risc5 PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>

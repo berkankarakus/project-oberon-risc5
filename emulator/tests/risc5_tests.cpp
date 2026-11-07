@@ -70,7 +70,7 @@ void test_spi_disk_read_write() {
   source[0] = 0x42;
   image.write(1, source);
   Memory memory;
-  memory.attach_disk(&image);
+  memory.attach_disk(image);
 
   // Select card and issue CMD17 for sector 1.
   memory.write32(Memory::IoBase + 20, 1);
@@ -84,6 +84,21 @@ void test_spi_disk_read_write() {
   assert(spi(0xff) == 0x42);
   std::filesystem::remove(path);
 }
+
+void test_machine_owns_disk_connection() {
+  const auto path = (std::filesystem::temp_directory_path() / "project-oberon-machine.img").string();
+  oberon::DiskImage image;
+  image.create(path, 1);
+  image.close();
+  oberon::Machine machine;
+  machine.open_disk(path, true);
+  assert(machine.has_disk());
+  assert(machine.memory().has_disk());
+  machine.close_disk();
+  assert(!machine.has_disk());
+  assert(!machine.memory().has_disk());
+  std::filesystem::remove(path);
+}
 }
 
-int main() { test_arithmetic_and_flags(); test_branch_and_link(); test_memory_word_and_byte_access(); test_mmio_devices(); test_disk_image(); test_spi_disk_read_write(); std::cout << "risc5-tests: all tests passed\n"; }
+int main() { test_arithmetic_and_flags(); test_branch_and_link(); test_memory_word_and_byte_access(); test_mmio_devices(); test_disk_image(); test_spi_disk_read_write(); test_machine_owns_disk_connection(); std::cout << "risc5-tests: all tests passed\n"; }

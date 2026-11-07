@@ -2,7 +2,12 @@
 build/
 dist/
 oberon-run
+oberon-ui
 risc5-tests
+device-tests
+input-tests
+options-tests
+RISC-work.img
 *.o
 *.dSYM/
 .DS_Store

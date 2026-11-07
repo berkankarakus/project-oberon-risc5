@@ -11,6 +11,7 @@ make test
 ```
 
 This runs the RISC5 core, device/SPI, SDL input, and command-line option tests.
+GitHub Actions runs the same suites on pushes and pull requests to `main`.
 
 To build all command-line and test binaries:
 

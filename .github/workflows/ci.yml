@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y g++ make libsdl2-dev
+
+      - name: Run test suites
+        run: make test
+
+      - name: Build CLI and SDL UI
+        run: make oberon-run ui
+
+      - name: Run ROM smoke test
+        run: ./oberon-run --rom RISC5Verilog/prom.mem --steps 1000

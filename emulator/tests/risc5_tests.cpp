@@ -70,6 +70,42 @@ void test_arithmetic_and_flags() {
   assert(!cpu.negative());
 }
 
+void test_integer_signedness_and_subtract_borrow() {
+  {
+    Memory memory;
+    memory.load_rom_words(rom_with({mov_imm(1, 0xffff, true), mov_imm(2, 2), alu(AluOp::Mul, 3, 1, 2)}));
+    Risc5 cpu(memory);
+    for (int i = 0; i < 3; ++i) cpu.step();
+    assert(cpu.reg(3) == 0xffff'fffeu);
+    assert(cpu.high() == 0xffff'ffffu);
+  }
+  {
+    Memory memory;
+    memory.load_rom_words(rom_with({mov_imm(1, 0xffff, true), mov_imm(2, 2), alu(AluOp::Mul, 3, 1, 2) | U}));
+    Risc5 cpu(memory);
+    for (int i = 0; i < 3; ++i) cpu.step();
+    assert(cpu.reg(3) == 0xffff'fffeu);
+    assert(cpu.high() == 1);
+  }
+  {
+    Memory memory;
+    memory.load_rom_words(rom_with({mov_imm(1, 3), mov_imm(2, 5), alu(AluOp::Sub, 3, 1, 2)}));
+    Risc5 cpu(memory);
+    for (int i = 0; i < 3; ++i) cpu.step();
+    assert(cpu.reg(3) == 0xffff'fffeu);
+    assert(cpu.carry());
+  }
+  {
+    Memory memory;
+    memory.load_rom_words(rom_with({mov_imm(1, 0xffff, true), mov_imm(2, 2), alu(AluOp::Mul, 3, 1, 2), alu(AluOp::Mov, 4, 0, 0) | U,
+                                    alu(AluOp::Mov, 5, 0, 0) | U | V}));
+    Risc5 cpu(memory);
+    for (int i = 0; i < 5; ++i) cpu.step();
+    assert(cpu.reg(4) == 0xffff'ffffu);
+    assert((cpu.reg(5) & 0xffu) == 0x53u);
+  }
+}
+
 void test_branch_and_link() {
   Memory memory;
   memory.load_rom_words(rom_with({branch_relative(ConditionCode::Always, 2, true), mov_imm(1, 0xdead), mov_imm(1, 0xbeef), mov_imm(2, 42)}));
@@ -250,12 +286,28 @@ void test_machine_advances_time_with_cpu() {
   assert(machine.cpu().steps() == 1);
   assert(machine.memory().read32(mmio(MmioRegister::Timer)) == 1);
 }
+
+void test_interrupt_vector_and_rti() {
+  Memory memory;
+  const auto enable_interrupts = 0xc700'0021u;
+  const auto return_from_interrupt = 0xc700'0010u;
+  memory.load_rom_words(rom_with({enable_interrupts, return_from_interrupt}));
+  memory.write32(4, return_from_interrupt);
+  Risc5 cpu(memory);
+  cpu.step();
+  cpu.step(true);
+  cpu.step(false);
+  assert(cpu.pc_word() == 1);
+  cpu.step(false);
+  assert(cpu.pc_word() == Risc5::ResetPc + 3);
+}
 }
 
 int main() {
   using Test = void (*)();
-  const std::array<std::pair<const char*, Test>, 10> tests = {
+  const std::array<std::pair<const char*, Test>, 12> tests = {
       std::pair{"arithmetic and flags", &test_arithmetic_and_flags},
+      std::pair{"integer signedness and subtract borrow", &test_integer_signedness_and_subtract_borrow},
       std::pair{"branch and link", &test_branch_and_link},
       std::pair{"memory word and byte access", &test_memory_word_and_byte_access},
       std::pair{"MMIO devices", &test_mmio_devices},
@@ -265,6 +317,7 @@ int main() {
       std::pair{"SPI data read semantics", &test_spi_data_read_is_non_destructive},
       std::pair{"machine disk ownership", &test_machine_owns_disk_connection},
       std::pair{"machine timing", &test_machine_advances_time_with_cpu},
+      std::pair{"interrupt vector and RTI", &test_interrupt_vector_and_rti},
   };
   for (const auto& [name, test] : tests) {
     test();

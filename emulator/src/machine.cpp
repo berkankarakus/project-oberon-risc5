@@ -17,7 +17,9 @@ void Machine::close_disk() {
 }
 
 void Machine::step() {
-  cpu_.step();
+  const auto irq = timer_phase_ == TimerInterruptPeriod - 1;
+  cpu_.step(irq);
+  timer_phase_ = (timer_phase_ + 1) % TimerInterruptPeriod;
   memory_.advance_time();
 }
 

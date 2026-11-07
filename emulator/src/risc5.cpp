@@ -105,6 +105,12 @@ void Risc5::reset() {
   pc_ = ResetPc;
   high_ = 0;
   n_ = z_ = c_ = ov_ = false;
+  irq_level_ = false;
+  interrupt_enabled_ = false;
+  interrupt_pending_ = false;
+  interrupt_mode_ = false;
+  saved_pc_ = 0;
+  saved_n_ = saved_z_ = saved_c_ = saved_ov_ = false;
   steps_ = 0;
 }
 
@@ -155,11 +161,20 @@ void Risc5::update_add_flags(std::uint32_t left, std::uint32_t right,
 void Risc5::update_sub_flags(std::uint32_t left, std::uint32_t right,
                              std::uint32_t result, bool borrow_in) {
   const auto subtrahend = static_cast<std::uint64_t>(right) + (borrow_in ? 1u : 0u);
-  c_ = static_cast<std::uint64_t>(left) >= subtrahend;
+  c_ = static_cast<std::uint64_t>(left) < subtrahend;
   ov_ = (((left ^ right) & (left ^ result)) & instruction_bits::SignBit) != 0;
 }
 
 void Risc5::write_reg(unsigned index, std::uint32_t value) { regs_[index & 15u] = value; }
+
+void Risc5::restore_interrupt_state() {
+  pc_ = saved_pc_;
+  n_ = saved_n_;
+  z_ = saved_z_;
+  c_ = saved_c_;
+  ov_ = saved_ov_;
+  interrupt_mode_ = false;
+}
 
 void Risc5::execute_register(const Instruction& instruction) {
   const auto left = regs_[instruction.b];
@@ -167,7 +182,13 @@ void Risc5::execute_register(const Instruction& instruction) {
   std::uint32_t result = 0;
   bool writes = true;
   switch (static_cast<AluOp>(instruction.op)) {
-  case AluOp::Mov: result = instruction.q ? (instruction.u ? (instruction.imm << 16) : static_cast<std::uint32_t>(sign_extend(instruction.imm, 16))) : regs_[instruction.c]; break;
+  case AluOp::Mov:
+    if (instruction.q) result = instruction.u ? (instruction.imm << 16) : (instruction.v ? static_cast<std::uint32_t>(sign_extend(instruction.imm, 16)) : instruction.imm);
+    else if (!instruction.u) result = regs_[instruction.c];
+    else if (!instruction.v) result = high_;
+    else result = (static_cast<std::uint32_t>(n_) << 31) | (static_cast<std::uint32_t>(z_) << 30) |
+                  (static_cast<std::uint32_t>(c_) << 29) | (static_cast<std::uint32_t>(ov_) << 28) | 0x53u;
+    break;
   case AluOp::Lsl: result = left << (operand & 31u); break;
   case AluOp::Asr: result = static_cast<std::uint32_t>(static_cast<std::int32_t>(left) >> (operand & 31u)); break;
   case AluOp::Ror: { const auto shift = operand & 31u; result = shift == 0 ? left : (left >> shift) | (left << (32u - shift)); break; }
@@ -178,13 +199,21 @@ void Risc5::execute_register(const Instruction& instruction) {
   case AluOp::Add: result = left + operand + (instruction.u && c_ ? 1u : 0u); update_add_flags(left, operand, result, instruction.u && c_); break;
   case AluOp::Sub: result = left - operand - (instruction.u && c_ ? 1u : 0u); update_sub_flags(left, operand, result, instruction.u && c_); break;
   case AluOp::Mul:
-    if (instruction.u) { const auto product = static_cast<std::int64_t>(static_cast<std::int32_t>(left)) * static_cast<std::int64_t>(static_cast<std::int32_t>(operand)); const auto bits = static_cast<std::uint64_t>(product); result = static_cast<std::uint32_t>(bits); high_ = static_cast<std::uint32_t>(bits >> 32); }
+    if (!instruction.u) { const auto product = static_cast<std::int64_t>(static_cast<std::int32_t>(left)) * static_cast<std::int64_t>(static_cast<std::int32_t>(operand)); const auto bits = static_cast<std::uint64_t>(product); result = static_cast<std::uint32_t>(bits); high_ = static_cast<std::uint32_t>(bits >> 32); }
     else { const auto product = static_cast<std::uint64_t>(left) * operand; result = static_cast<std::uint32_t>(product); high_ = static_cast<std::uint32_t>(product >> 32); }
     break;
   case AluOp::Div:
     if (operand == 0) { result = std::numeric_limits<std::uint32_t>::max(); high_ = left; }
-    else if (instruction.u) { const auto quotient = static_cast<std::int32_t>(left) / static_cast<std::int32_t>(operand); const auto remainder = static_cast<std::int32_t>(left) % static_cast<std::int32_t>(operand); result = static_cast<std::uint32_t>(quotient); high_ = static_cast<std::uint32_t>(remainder); }
-    else { result = left / operand; high_ = left % operand; }
+    else if (instruction.u) { result = left / operand; high_ = left % operand; }
+    else {
+      const auto dividend = static_cast<std::int32_t>(left);
+      const auto divisor = static_cast<std::int32_t>(operand);
+      auto quotient = dividend / divisor;
+      auto remainder = dividend % divisor;
+      if (remainder < 0) { --quotient; remainder += divisor; }
+      result = static_cast<std::uint32_t>(quotient);
+      high_ = static_cast<std::uint32_t>(remainder);
+    }
     break;
   case AluOp::Fad: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) + std::bit_cast<float>(operand)); break;
   case AluOp::Fsb: result = std::bit_cast<std::uint32_t>(std::bit_cast<float>(left) - std::bit_cast<float>(operand)); break;
@@ -214,13 +243,35 @@ void Risc5::execute_branch(const Instruction& instruction, std::uint32_t next_pc
   if (instruction.v) { const auto link = next_pc << 2; write_reg(15, link); update_nz(link); }
 }
 
-void Risc5::step() {
+void Risc5::step() { step(false); }
+
+void Risc5::step(bool irq) {
   const auto instruction = decode(memory_.read_instruction(pc_byte()));
   const auto next_pc = (pc_ + 1u) & instruction_bits::BranchDisplacementMask;
+  const auto interrupt_ack = interrupt_pending_ && interrupt_enabled_ && !interrupt_mode_;
+  const auto irq_rising = irq && !irq_level_;
+  irq_level_ = irq;
+  if (irq_rising) interrupt_pending_ = true;
+
   pc_ = next_pc;
   if (!instruction.p) execute_register(instruction);
   else if (!instruction.q) execute_memory(instruction);
-  else execute_branch(instruction, next_pc);
+  else if (instruction.u || instruction.v || (instruction.raw & 0x30u) == 0) {
+    execute_branch(instruction, next_pc);
+  } else {
+    if ((instruction.raw & 0x10u) != 0 && interrupt_mode_) restore_interrupt_state();
+    if ((instruction.raw & 0x20u) != 0) interrupt_enabled_ = (instruction.raw & 1u) != 0;
+  }
+  if (interrupt_ack) {
+    saved_pc_ = pc_;
+    saved_n_ = n_;
+    saved_z_ = z_;
+    saved_c_ = c_;
+    saved_ov_ = ov_;
+    pc_ = 1;
+    interrupt_pending_ = false;
+    interrupt_mode_ = true;
+  }
   ++steps_;
 }
 

@@ -73,6 +73,7 @@ public:
 
   void reset();
   void step();
+  void step(bool irq);
 
   std::uint32_t pc_word() const { return pc_; }
   std::uint32_t pc_byte() const { return (pc_ << 2) & MemoryBus::AddressMask; }
@@ -110,6 +111,7 @@ private:
   void update_sub_flags(std::uint32_t left, std::uint32_t right,
                         std::uint32_t result, bool borrow_in);
   void write_reg(unsigned index, std::uint32_t value);
+  void restore_interrupt_state();
 
   MemoryBus& memory_;
   std::array<std::uint32_t, 32> regs_{};
@@ -119,6 +121,15 @@ private:
   bool z_ = false;
   bool c_ = false;
   bool ov_ = false;
+  bool irq_level_ = false;
+  bool interrupt_enabled_ = false;
+  bool interrupt_pending_ = false;
+  bool interrupt_mode_ = false;
+  std::uint32_t saved_pc_ = 0;
+  bool saved_n_ = false;
+  bool saved_z_ = false;
+  bool saved_c_ = false;
+  bool saved_ov_ = false;
   std::uint64_t steps_ = 0;
 };
 
@@ -134,6 +145,7 @@ public:
   void open_disk(const std::string& path, bool writable = true);
   void close_disk();
   bool has_disk() const { return disk_.has_value(); }
+  static constexpr std::uint64_t TimerInterruptPeriod = 1000;
   void step();
   void run(std::uint64_t steps);
 
@@ -141,6 +153,7 @@ private:
   Memory memory_;
   Risc5 cpu_;
   std::optional<DiskImage> disk_;
+  std::uint64_t timer_phase_ = 0;
 };
 
 } // namespace oberon
